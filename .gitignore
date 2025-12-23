@@ -18,3 +18,9 @@ outputs/
 
 # Ignore environment variables
 .env
+
+CLAUDE.md
+.claude
+*.pyc
+.pylibs/
+uv.lock

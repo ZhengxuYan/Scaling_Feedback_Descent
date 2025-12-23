@@ -1,0 +1,16 @@
+[project]
+name = "scaling-feedback-descent"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+    "nltk",
+    "requests",
+    "aiohttp",
+    "textstat==0.7.12",
+    "lexicalrichness==0.5.1",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.14.10",
+]
