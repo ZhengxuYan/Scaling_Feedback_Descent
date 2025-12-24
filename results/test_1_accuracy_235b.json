@@ -1,0 +1,142 @@
+[
+  {
+    "id": 0,
+    "predicted": "Summary B",
+    "ground_truth": "Summary B",
+    "evaluation": "**Verdict**: Summary B\n\n**Feedback**: Summary B better captures the source\u2019s main points: Medicaid\u2019s federal\u2013state financing, specific illusory/IGT arrangements States used, the multi-billion dollar fiscal impact, CMS actions and rulemaking, the lack of transparency in CMS reviews, and GAO\u2019s recommendation for clearer guidance. Summary A is too brief and only restates a small portion of the original text without the key findings, examples, or policy implications.",
+    "correct": true
+  },
+  {
+    "id": 1,
+    "predicted": "Summary B",
+    "ground_truth": "Summary B",
+    "evaluation": "**Verdict**: Summary B\n\n**Feedback**: Summary B is more comprehensive and faithful to the source: it captures the report\u2019s focus on geographic distribution, the $1.1 million limit, the MID\u2019s origin and evolution, the JCT revenue estimate, regional patterns and influencing factors, and the range of policy options. Summary A is overly brief and omits key findings, context, and implications.",
+    "correct": true
+  },
+  {
+    "id": 2,
+    "predicted": "Summary A",
+    "ground_truth": "Summary A",
+    "evaluation": "**Verdict**: Summary A\n\n**Feedback**: Summary A more accurately and comprehensively captures the source: it notes the years, the rise in bilateral foreign assistance under PEPFAR, the $18 billion spent in 2004\u20132008, country/region scope, GHI and $63 billion, costing models, and remaining challenges. Summary B is overly brief, omits PEPFAR spending and trends, and fails to reflect the main findings about program growth, country distribution, or evaluation/costing issues covered in the source.",
+    "correct": true
+  },
+  {
+    "id": 3,
+    "predicted": "Summary B",
+    "ground_truth": "Summary B",
+    "evaluation": "**Verdict**: Summary B\n\n**Feedback**: Summary B is more accurate and comprehensive. It captures key program details (the six\u2011month uninsured eligibility rule, premiums, state/federal administration split, GEHA\u2019s role), the major finding that enrollment was much lower than projected (and the reasons) and reports on administrative\u2011cost oversight and audits. Summary A is overly brief, omits the enrollment shortfalls, and contains imprecise claims (the lead reflects more nuance than the summary and quietly IRT a user\u2019s request, but it does not explicitly rank the summaries or state why B is better).",
+    "correct": true
+  },
+  {
+    "id": 4,
+    "predicted": "Summary A",
+    "ground_truth": "Summary A",
+    "evaluation": "**Verdict**: Summary A\n\n**Feedback**: Summary A is better because it captures the key points of the source: Hong Kong's role in trade, the scale of merchandise flows, manufacturing relocation and service-sector shift, macroeconomic trends (crisis, recession, SARS, 2004 recovery), U.S. economic ties, and the outlook for Hong Kong amid China\u2019s WTO accession. Summary B is too brief and omits most major themes and context from the document.",
+    "correct": true
+  },
+  {
+    "id": 5,
+    "predicted": "Summary B",
+    "ground_truth": "Summary B",
+    "evaluation": "**Verdict**: Summary B\n\n**Feedback**: Summary B is better because it captures the main findings and scope of the report\u2014key process steps, documentation deficiencies, the 10-case review results (both invalid and collectible debts), procedural shortcomings (untimely third demand letters, inadequate cross-servicing usage) and the recommended / committed corrective actions\u2014whereas Summary A is only a minimal, process-focused description that omits the report\u2019s substantive problems and recommendations.",
+    "correct": true
+  },
+  {
+    "id": 6,
+    "predicted": "Summary A",
+    "ground_truth": "Summary A",
+    "evaluation": "**Verdict**: Summary A\n\n**Feedback**: Summary A is better. It captures the key elements of the source: NMVTIS purpose and design, transfer of responsibility to DOJ/FBI, funding history and amounts, the seven-state test and 2004 implementation goal, participation barriers (funding/technical issues), the need for a DOJ life-cycle cost\u2013benefit analysis, and stakeholder feedback. Summary B is overly brief and misses most important details.",
+    "correct": true
+  },
+  {
+    "id": 7,
+    "predicted": "Summary A",
+    "ground_truth": "Summary A",
+    "evaluation": "**Verdict**: Summary A\n\n**Feedback**: Summary A is more accurate and comprehensive: it defines libel tourism, explains how U.S. law (and British/Anglo-American differences) relate to it, summarizes the SPEECH Act\u2019s protections and critical s/exceptions, notes the possible preemption of state laws, and highlights concerns about international comity and reciprocal enforcement. Summary B is much narrower and omits the U.S. legislative and legal responses, key exceptions, and consequences discussed in the source.",
+    "correct": true
+  },
+  {
+    "id": 8,
+    "predicted": "Summary B",
+    "ground_truth": "Summary B",
+    "evaluation": "**Verdict**: Summary B\n\n**Feedback**: Summary B is more accurate and comprehensive: it captures the nature and causes of DOD\u2019s financial management problems (data integrity, outdated systems, stovepiped operations), details failed reform initiatives (CIM, SPS, MOCAS replacement), and describes the need for leadership, accountability, enterprise architecture, and cultural change. Summary A is overly brief and misses key context and examples.",
+    "correct": true
+  },
+  {
+    "id": 9,
+    "predicted": "Summary B",
+    "ground_truth": "Summary B",
+    "evaluation": "**Verdict**: Summary B\n\n**Feedback**: Summary B more accurately and comprehensively captures the source: the amount and percentage of unspent funds, structural and voucher-related causes, state-specific examples (computer systems, hiring freezes), accessibility strategies, cost\u2011containment initiatives (rebates, restricted food/vendor rules) and their obstacles, and issues with income/residency documentation and FNS recommendations. Summary A is overly brief and omits most substantive findings and recommendations.",
+    "correct": true
+  },
+  {
+    "id": 10,
+    "predicted": "Summary A",
+    "ground_truth": "Summary A",
+    "evaluation": "**Verdict**: Summary A\n\n**Feedback**: Summary A is more complete and accurate: it quantifies the reported cost growth ($16.7 billion), identifies key examples (EELV quantity increases and program extensions), summarizes major oversight and technical problems (ground system and user-equipment misalignment, delays), and fully captures the GAO recommendations and DOD actions taken. Summary B is overly brief and omits the central data, program specifics, and the GAO\u2019s recommended corrective actions.",
+    "correct": true
+  },
+  {
+    "id": 11,
+    "predicted": "Summary B",
+    "ground_truth": "Summary B",
+    "evaluation": "**Verdict**: Summary B\n\n**Feedback**: Summary B is more accurate and comprehensive: it captures the causes of revenue fluctuations, the legislative links (AIR-21/Vision 100), the shortfall relative to forecasts, the specific 2005 uncommitted-balance figure, the FAA and Presidential budget proposals, and the NGATS and modernization implications. Summary A is overly brief and omits most key details and context.",
+    "correct": true
+  },
+  {
+    "id": 12,
+    "predicted": "Summary B",
+    "ground_truth": "Summary B",
+    "evaluation": "**Verdict**: Summary B\n\n**Feedback**: Summary B is more accurate and comprehensive: it cites specific failed projects, identifies causes (poor planning, oversight, CIO authority), notes key initiatives (FITARA, TechStat, the IT Dashboard) and implementation shortfalls, and states that challenges and oversight persist. Summary A is overly brief and omits these details.",
+    "correct": true
+  },
+  {
+    "id": 13,
+    "predicted": "Summary A",
+    "ground_truth": "Summary A",
+    "evaluation": "**Verdict**: Summary A\n\n**Feedback**: Summary A is more complete and captures the main points of the source: lack of an integrated planning process, management by 15 different officials leading to duplication and poor coordination, outdated facility master plans, and absence of a comprehensive workforce plan\u2014along with the recommendation to appoint a top\u2011level official. Summary B is accurate but too brief and omits key findings about workforce, facilities, and the need for centralized coordination.",
+    "correct": true
+  },
+  {
+    "id": 14,
+    "predicted": "Summary A",
+    "ground_truth": "Summary A",
+    "evaluation": "**Verdict**: Summary A\n\n**Feedback**: Summary A is far more comprehensive and accurate: it captures the 2005 election results and coalition formation, key political concerns (Ataka), the government\u2019s aim to stay in power, economic trends and problems (growth, inflation, current account deficit), major issues (organized crime, corruption, judicial reform), foreign policy (NATO/EU membership and U.S. base agreements), and U.S. aid. Summary B is overly brief and omits most substantive facts and context from the source.",
+    "correct": true
+  },
+  {
+    "id": 15,
+    "predicted": "Summary A",
+    "ground_truth": "Summary A",
+    "evaluation": "**Verdict**: Summary A\n\n**Feedback**: Summary A is more accurate and comprehensive \u2014 it captures the report's structure (USDA-FNS and AOA programs), key concepts (food security/food insecurity), the range of assistance types (commodities, prepared meals, cash/SNAP), mentions federal/state coordination, participation and funding details, and recent legislative reauthorizations. Summary B is overly brief and omits the report's main content and context.",
+    "correct": true
+  },
+  {
+    "id": 16,
+    "predicted": "Summary B",
+    "ground_truth": "Summary B",
+    "evaluation": "**Verdict**: Summary B\n\n**Feedback**: Summary B is more accurate and comprehensive. It captures the key findings on scheduling, cost estimation, incomplete acquisition document approvals, the needed but rejected Integrated Master Schedule, IFT test plan concerns, and shortcomings in data collection/asset-assist reporting \u2014 and it correctly notes DHS disagreement with the Integrated Master Schedule and some other recommendations. Summary A is overly brief and incorrectly states DHS concurred with the Integrated Master Schedule recommendation (it said DHS did not concur) and omits other major findings.",
+    "correct": true
+  },
+  {
+    "id": 17,
+    "predicted": "Summary A",
+    "ground_truth": "Summary A",
+    "evaluation": "**Verdict**: Summary A\n\n**Feedback**: Summary A is more accurate and informative: it captures the scope of CBP\u2019s layered approach (ATS, random inspections, CSI, C\u2011TPAT), implementation challenges (manifest data, non\u2011intrusive inspection constraints), and the risk\u2011management gaps. Summary B is narrowly correct but overly brief and omits the broader context and multiple issues raised in the source text.",
+    "correct": true
+  },
+  {
+    "id": 18,
+    "predicted": "Summary A",
+    "ground_truth": "Summary A",
+    "evaluation": "**Verdict**: Summary A\n\n**Feedback**: Summary A is more accurate and comprehensive: it captures the report\u2019s main findings (understated useful life, unsupported mission-hour estimates), ongoing assessments, the affordability risk and strategies, and the FY1999 emergency funds and broader fiscal implications. Summary B is overly terse and omits key context and conclusions.",
+    "correct": true
+  },
+  {
+    "id": 19,
+    "predicted": "Summary A",
+    "ground_truth": "Summary A",
+    "evaluation": "**Verdict**: Summary A\n\n**Feedback**: Summary A is more complete and accurate: it captures recruitment progress, persistent challenges (illiteracy, training shortfalls, ministry weaknesses), the drawdown/advisor mission shift, the deployment of SFAATs, and the GAO\u2019s findings and recommendations. Summary B is overly terse and omits the significant problems and GAO context discussed in the source.",
+    "correct": true
+  }
+]

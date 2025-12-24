@@ -1,5 +1,6 @@
 from dotenv import load_dotenv
-from tinker_cookbook import cli_utils, model_info
+import tinker_cookbook.cli_utils as cli_utils
+import tinker_cookbook.model_info as model_info
 from tinker_cookbook.renderers import TrainOnWhat
 from tinker_cookbook.supervised import train
 from tinker_cookbook.supervised.data import FromConversationFileBuilder
@@ -9,7 +10,7 @@ import os
 
 def build_config() -> train.Config:
     # Model configuration
-    model_name = "Qwen/Qwen3-4B-Instruct-2507"
+    model_name = "Qwen/Qwen3-235B-A22B-Instruct-2507"
     renderer_name = model_info.get_recommended_renderer_name(model_name)
     
     # Dataset configuration
@@ -21,17 +22,18 @@ def build_config() -> train.Config:
         train_on_what=TrainOnWhat.ALL_ASSISTANT_MESSAGES,
     )
     
+    # Path relative to where the script is run (Scaling_Feedback_Descent root)
     dataset = FromConversationFileBuilder(
         common_config=common_config,
-        file_path="data/pairwise_train.jsonl",
+        file_path="creative-writing-bench/data/pairwise_train.jsonl",
     )
     
     return train.Config(
-        log_path="logs/sft_feedsum_critic_pairwise",
+        log_path="logs/sft_creative_writing_critic_pairwise_qwen3_235b",
         model_name=model_name,
         dataset_builder=dataset,
         wandb_project="Scaling_Feedback_Descent",
-        wandb_name="sft_feedsum_critic_pairwise_qwen3_4b",
+        wandb_name="sft_creative_writing_critic_pairwise_qwen3_235b",
         num_epochs=1,
         save_every=100,
         eval_every=100,
@@ -40,7 +42,8 @@ def build_config() -> train.Config:
 def main():
     load_dotenv()
     config = build_config()
-    cli_utils.check_log_dir(config.log_path, behavior_if_exists="ask")
+    # Changed to overwrite to avoid interactive prompt blocking execution
+    cli_utils.check_log_dir(config.log_path, behavior_if_exists="overwrite")
     asyncio.run(train.main(config))
 
 if __name__ == "__main__":
