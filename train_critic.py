@@ -29,11 +29,11 @@ def build_config() -> train.Config:
     )
     
     return train.Config(
-        log_path="logs/sft_creative_writing_critic_pairwise_qwen3_235b_new",
+        log_path="logs/sft_creative_writing_critic_pairwise_Qwen3-235B-A22B-Instruct-2507",
         model_name=model_name,
         dataset_builder=dataset,
         wandb_project="Scaling_Feedback_Descent",
-        wandb_name="sft_creative_writing_critic_pairwise_qwen3_235b_new",
+        wandb_name="sft_creative_writing_critic_pairwise_Qwen3-235B-A22B-Instruct-2507",
         num_epochs=1,
         save_every=100,
         eval_every=100,

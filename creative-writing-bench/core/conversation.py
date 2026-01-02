@@ -71,7 +71,9 @@ class CreativeWritingTask:
                         min_p=0.1,
                         include_seed=False,
                         use_rationale=self.use_rationale,
-                        feedback_rounds=self.feedback_rounds
+                        feedback_rounds=self.feedback_rounds,
+                        prompt_id=str(self.prompt_id),
+                        seed_modifier=str(seed_modifier)
                     )
                     with open("debug_log.txt", "a") as f: f.write("DEBUG: API generate returned\n")
                     

@@ -172,7 +172,7 @@ def create_synthetic_rationale(winner_cand, loser_cand):
             
     reason_text = ", ".join(details) if details else "better overall quality"
     
-    return f"The winner produced a better story because it has {reason_text}. (Overall Score: {winner_cand['aggregated_score']:.2f} vs {loser_cand['aggregated_score']:.2f})"
+    return f"The winner produced a better draft because it has {reason_text}. (Overall Score: {winner_cand['aggregated_score']:.2f} vs {loser_cand['aggregated_score']:.2f})"
 
 def construct_comparison_data():
     runs_file = "creative_bench_runs.json"
@@ -212,11 +212,11 @@ def construct_comparison_data():
                     score_a, score_b = score_b, score_a
                 
                 if score_a > score_b:
-                    ground_truth_winner = "Summary A"
+                    ground_truth_winner = "Draft A"
                     winner_cand = cand_a
                     loser_cand = cand_b
                 else:
-                    ground_truth_winner = "Summary B"
+                    ground_truth_winner = "Draft B"
                     winner_cand = cand_b
                     loser_cand = cand_a
                 
@@ -224,9 +224,9 @@ def construct_comparison_data():
                 
                 user_content = (
                     f"Here is a writing prompt:\n{data['base_prompt']}\n\n"
-                    f"Story A:\n{cand_a['summary']}\n\n"
-                    f"Story B:\n{cand_b['summary']}\n\n"
-                    "Which story is better and why?"
+                    f"Draft A:\n{cand_a['summary']}\n\n"
+                    f"Draft B:\n{cand_b['summary']}\n\n"
+                    "Which draft is better and why?"
                 )
                 
                 assistant_content = f"**Verdict**: {ground_truth_winner}\n\n**Feedback**: {rationale}"

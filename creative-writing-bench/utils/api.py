@@ -7,6 +7,7 @@ import requests
 import random
 import string
 import asyncio
+import uuid
 from typing import Optional, Dict, Any
 from dotenv import load_dotenv
 
@@ -409,6 +410,7 @@ class APIClient:
         system: str = None,
         use_rationale: bool = True,
         feedback_rounds: int = 1,
+        **kwargs
     ) -> str:
         with open("debug_api.txt", "a") as f:
             f.write(
@@ -438,6 +440,9 @@ class APIClient:
                         f"Using the above history/feedback to improve, please respond to the original request."
                     )
                 
+                if round_idx == 1:
+                     structured_history = []
+                
                 # 1. Generate two drafts (Base Model)
                 messages = [{"role": "user", "content": round_context_prompt}]
                 if system:
@@ -460,10 +465,10 @@ class APIClient:
                     f.write(f"DEBUG: Round {round_idx} - Criticizing\n")
                     
                 critic_prompt = (
-                    f"Here is a request:\n{current_prompt}\n\n" # Use original prompt for context
-                    f"Response A:\n{draft1}\n\n"
-                    f"Response B:\n{draft2}\n\n"
-                    "Which response is better and why?"
+                    f"Here is a writing prompt:\n{current_prompt}\n\n"
+                    f"Draft A:\n{draft1}\n\n"
+                    f"Draft B:\n{draft2}\n\n"
+                    "Which draft is better and why?"
                 )
                 critic_messages = [{"role": "user", "content": critic_prompt}]
                 # Use low temp for critic
@@ -471,25 +476,60 @@ class APIClient:
                     self.tinker_critic_client, critic_messages, 0.0, 1024
                 )
 
+                with open("debug_api.txt", "a") as f:
+                    f.write(f"DEBUG: Round {round_idx} - Content of Evaluation:\n{evaluation}\n")
+
                 # 3. Parse Verdict
                 winner = draft1
                 cleaned_eval = evaluation.strip().lower()
-                winning_response_str = "Response A"
+                winning_response_str = "Draft A" # Default label
                 
-                # Simple parsing logic
-                if "response b" in cleaned_eval and "response a" not in cleaned_eval:
-                    winner = draft2
-                    winning_response_str = "Response B"
-                elif "response a" in cleaned_eval and "response b" not in cleaned_eval:
-                    winner = draft1
+                # Robust parsing logic based on trained format "**Verdict**: ..."
+                # We look for the "Verdict" pattern first
+                verdict_match = re.search(r"\*\*Verdict\*\*:\s*(.*)", evaluation, re.IGNORECASE)
+                
+                is_b_winner = False
+                
+                if verdict_match:
+                    verdict_text = verdict_match.group(1).strip().lower()
+                    # Check for B variants
+                    if "draft b" in verdict_text or "response b" in verdict_text or "summary b" in verdict_text:
+                        is_b_winner = True
+                        winning_response_str = "Draft B"
+                    elif "draft a" in verdict_text or "response a" in verdict_text or "summary a" in verdict_text:
+                        is_b_winner = False
+                        winning_response_str = "Draft A"
+                    else:
+                         # Ambiguous verdict line, fall back to broader check
+                         with open("debug_api.txt", "a") as f:
+                             f.write(f"DEBUG: Ambiguous verdict line '{verdict_text}', falling back\n")
+                         if "draft b" in cleaned_eval or "response b" in cleaned_eval:
+                             is_b_winner = True
+                             winning_response_str = "Draft B"
                 else:
-                    # Regex Fallback
-                    match = re.search(
-                        r"Verdict\**:\s*(Response [AB])", evaluation, re.IGNORECASE
-                    )
-                    if match and match.group(1).lower() == "response b":
-                        winner = draft2
-                        winning_response_str = "Response B"
+                    # Fallback if specific formatting is missing (model failed to follow implicit format)
+                    if "draft b" in cleaned_eval or "response b" in cleaned_eval:
+                        # Check strictly if A is NOT mentioned or mentioned in negative context? 
+                        # Simple existence check is risky but better than nothing if format failed.
+                        # For safety, let's prefer explicit signals.
+                        # Using the previous fallback logic:
+                        if "draft b" in cleaned_eval and "draft a" not in cleaned_eval:
+                             is_b_winner = True
+                             winning_response_str = "Draft B"
+                        else:
+                             # Try regex for other variations
+                             match = re.search(r"Verdict\**:\s*(Draft|Response|Summary|Story) [AB]", evaluation, re.IGNORECASE)
+                             if match:
+                                  if " b" in match.group(0).lower():
+                                       is_b_winner = True
+                                       winning_response_str = "Draft B"
+
+                if is_b_winner:
+                    winner = draft2
+                    winning_response_str = "Draft B"
+                else:
+                    winner = draft1
+                    winning_response_str = "Draft A"
 
                 with open("debug_api.txt", "a") as f:
                     f.write(f"DEBUG: Round {round_idx} - Winner selected ({winning_response_str})\n")
@@ -528,8 +568,56 @@ class APIClient:
                 )
                 history_buffer.append(round_history_entry)
 
+                # Collect structured data
+                round_data = {
+                    "round": round_idx,
+                    "draft1": draft1,
+                    "draft2": draft2,
+                    "critic_evaluation": evaluation,
+                    "verdict": winning_response_str,
+                    "winner_content": winner,
+                    "refined_response": refined
+                }
+                structured_history.append(round_data)
+
                 with open("debug_api.txt", "a") as f:
                     f.write(f"DEBUG: Round {round_idx} Complete\n")
+            
+            # Save history to JSON
+            try:
+                history_dir = "tinker_history"
+                if not os.path.exists(history_dir):
+                    os.makedirs(history_dir)
+                
+                # Get context from kwargs
+                p_id = kwargs.get('prompt_id', 'unknown_prompt')
+                # Sanitize prompt id slightly
+                p_id = re.sub(r'[^a-zA-Z0-9_-]', '_', p_id)
+                
+                # Create filename
+                timestamp = int(time.time())
+                unique_id = uuid.uuid4().hex[:8]
+                filename = f"{history_dir}/history_{p_id}_{timestamp}_{unique_id}.json"
+                
+                save_data = {
+                    "timestamp": timestamp,
+                    "prompt_id": kwargs.get('prompt_id'),
+                    "seed_modifier": kwargs.get('seed_modifier'),
+                    "original_prompt": prompt,
+                    "rounds": structured_history,
+                    "final_response": final_response
+                }
+                
+                with open(filename, "w", encoding="utf-8") as f:
+                    json.dump(save_data, f, indent=2)
+                
+                with open("debug_api.txt", "a") as f:
+                    f.write(f"DEBUG: Saved tinker history to {filename}\n")
+                    
+            except Exception as e:
+                logging.error(f"Failed to save tinker history: {e}")
+                with open("debug_api.txt", "a") as f:
+                    f.write(f"DEBUG: Failed to save history: {e}\n")
 
             return final_response
 

@@ -28,3 +28,4 @@ CLAUDE.md
 .pylibs/
 uv.lock
 creative-writing-bench/results/
+creative-writing-bench/data/pairwise_*.jsonl
