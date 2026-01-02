@@ -56,6 +56,8 @@ for name in names:
         short = short.replace('gpt-5-2025-08-07', 'GPT-5')
     elif 'qwen-235b-critic' in short or 'qwen3-235b' in short:
         short = 'Qwen 235B Critic' if 'critic' in short else 'Qwen 235B'
+    elif 'qwen-4b-critic' in short or 'qwen3-4b' in short:
+        short = 'Qwen 4B Critic' if 'critic' in short else 'Qwen 4B'
     
     # Truncate if still too long
     if len(short) > 40:

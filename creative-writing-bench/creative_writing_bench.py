@@ -118,6 +118,8 @@ def main():
     parser.add_argument("--iterations", type=int, default=1, help="How many iteration passes to run (one seed per iteration).")
     # --- New Argument ---
     parser.add_argument("--no-elo", action="store_true", default=False, help="Disable the ELO analysis step.")
+    parser.add_argument("--no-rationale", action="store_true", default=False, help="If set, Tinker models will use only the verdict (no rationale) for refinement.")
+    parser.add_argument("--feedback-rounds", type=int, default=1, help="Number of feedback descent rounds for Tinker models (default: 1).")
 
     args = parser.parse_args()
     setup_logging(get_verbosity(args.verbosity))
@@ -127,6 +129,7 @@ def main():
     signal.signal(signal.SIGTERM, signal_handler)
 
     run_elo_flag = not args.no_elo # Determine if ELO should run
+    use_rationale_flag = not args.no_rationale
 
     with open("debug_log.txt", "a") as f: f.write("DEBUG: Calling run_eq_bench_creative\n")
     run_key = run_eq_bench_creative(
@@ -142,7 +145,9 @@ def main():
         redo_judging=args.redo_judging,
         save_interval=args.save_interval,
         iterations=args.iterations,
-        run_elo=run_elo_flag # Pass the flag
+        run_elo=run_elo_flag, # Pass the flag
+        use_rationale=use_rationale_flag,
+        feedback_rounds=args.feedback_rounds,
     )
 
     logging.info(f"Creative writing benchmark completed. Run key: {run_key}")

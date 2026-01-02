@@ -19,8 +19,12 @@ outputs/
 # Ignore environment variables
 .env
 
+# Ignore images
+*.png
+
 CLAUDE.md
 .claude
 *.pyc
 .pylibs/
 uv.lock
+creative-writing-bench/results/

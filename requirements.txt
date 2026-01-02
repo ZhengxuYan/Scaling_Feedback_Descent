@@ -50,6 +50,7 @@ jsonref==1.1.0
 jsonschema==4.25.1
 jsonschema-specifications==2025.9.1
 latex2sympy2_extended==1.10.2
+lexicalrichness
 linkify-it-py==2.0.3
 lxml==6.0.2
 markdown-it-py==4.0.0
@@ -93,6 +94,7 @@ s3transfer==0.14.0
 safetensors==0.7.0
 scipy==1.16.3
 semver==3.0.4
+seaborn
 setuptools==80.9.0
 shortuuid==1.0.13
 six==1.17.0
@@ -102,6 +104,7 @@ sympy==1.14.0
 tenacity==9.1.2
 termcolor==3.2.0
 TextArena==0.7.4
+textstat
 textual==6.6.0
 tinker==0.5.0
 -e git+https://github.com/thinking-machines-lab/tinker-cookbook.git@0adfc25b7e1ea99d3ec4aab311516fab8c5e5120#egg=tinker_cookbook

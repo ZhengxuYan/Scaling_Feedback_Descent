@@ -17,7 +17,9 @@ class CreativeWritingTask:
         seed_modifiers: List[str],
         iteration_index: int,
         test_model: str,
-        judge_model: str
+        judge_model: str,
+        use_rationale: bool = True,
+        feedback_rounds: int = 1,
     ):
         self.prompt_id = prompt_id
         self.base_prompt = base_prompt
@@ -25,6 +27,8 @@ class CreativeWritingTask:
         self.iteration_index = iteration_index
         self.test_model = test_model
         self.judge_model = judge_model
+        self.use_rationale = use_rationale
+        self.feedback_rounds = feedback_rounds
 
         self.status = "initialized"
         self.start_time = None
@@ -59,7 +63,16 @@ class CreativeWritingTask:
             for attempt in range(1, max_attempts + 1):
                 try:
                     with open("debug_log.txt", "a") as f: f.write(f"DEBUG: Calling API generate attempt {attempt}\n")
-                    response = test_api.generate(self.test_model, final_prompt, temperature=0.7, max_tokens=4000, min_p=0.1, include_seed=False)
+                    response = test_api.generate(
+                        self.test_model,
+                        final_prompt,
+                        temperature=0.7,
+                        max_tokens=4000,
+                        min_p=0.1,
+                        include_seed=False,
+                        use_rationale=self.use_rationale,
+                        feedback_rounds=self.feedback_rounds
+                    )
                     with open("debug_log.txt", "a") as f: f.write("DEBUG: API generate returned\n")
                     
                     # Check if response is too short
@@ -224,6 +237,8 @@ class CreativeWritingTask:
             "iteration_index": self.iteration_index,
             "test_model": self.test_model,
             "judge_model": self.judge_model,
+            "use_rationale": self.use_rationale,
+            "feedback_rounds": self.feedback_rounds,
             "status": self.status,
             "start_time": self.start_time,
             "end_time": self.end_time,
@@ -239,7 +254,9 @@ class CreativeWritingTask:
             seed_modifiers=data["seed_modifiers"],
             iteration_index=data.get("iteration_index", 0),
             test_model=data["test_model"],
-            judge_model=data["judge_model"]
+            judge_model=data["judge_model"],
+            use_rationale=data.get("use_rationale", True),
+            feedback_rounds=data.get("feedback_rounds", 1)
         )
         obj.status = data.get("status", "initialized")
         obj.start_time = data.get("start_time")

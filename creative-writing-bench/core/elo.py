@@ -745,7 +745,9 @@ def run_elo_analysis_creative(
 
             # Parallel execution of opponent processing
             # The main `concurrency` parameter is used for the number of opponent tasks in parallel.
-            outer_workers = min(len(opponents_to_process), concurrency)
+            # UPDATE: Force sequential processing of opponents to avoid nested thread explosion (concurrency * concurrency).
+            # We only use 'concurrency' for the inner loop (items per opponent).
+            outer_workers = 1 # min(len(opponents_to_process), concurrency)
             if opponents_to_process and outer_workers > 0:
                 with ThreadPoolExecutor(max_workers=outer_workers) as executor:
                     future_to_opponent_details: Dict[Any, Tuple[str, int]] = {

@@ -203,6 +203,8 @@ def run_eq_bench_creative(
     save_interval: int = 2,
     iterations: int = 1,
     run_elo: bool = True,
+    use_rationale: bool = True,
+    feedback_rounds: int = 1,
 ) -> str:
     with open("debug_log.txt", "a") as f:
         f.write("DEBUG: run_eq_bench_creative started\n")
@@ -355,6 +357,7 @@ def run_eq_bench_creative(
                 # Load existing task data into an object
                 try:
                     resumed_task = CreativeWritingTask.from_dict(c_data)
+                    resumed_task.feedback_rounds = feedback_rounds # Ensure updated config applies on resume
                     if resumed_task.status in ("completed", "judged"):
                         missing = any(
                             not blk.get("judge_scores")
@@ -384,6 +387,8 @@ def run_eq_bench_creative(
                     iteration_index=i,
                     test_model=test_model,
                     judge_model=judge_model,
+                    use_rationale=use_rationale,
+                    feedback_rounds=feedback_rounds,
                 )
                 tasks_to_run.append(new_task)
 

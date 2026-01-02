@@ -89,6 +89,23 @@ class APIClient:
                 f"Initialized {self.model_type} API client with URL: {self.base_url}"
             )
 
+        # Create a shared session for connection pooling with robust retries
+        self.session = requests.Session()
+        
+        # Define a retry strategy that handles connection errors (RemoteDisconnected)
+        from urllib3.util.retry import Retry
+        retry_strategy = Retry(
+            total=3,
+            backoff_factor=1,
+            status_forcelist=[429, 500, 502, 503, 504],
+            allowed_methods=["HEAD", "GET", "OPTIONS", "POST", "PUT", "DELETE"],
+            raise_on_status=False # We handle status codes in our wrapper
+        )
+        
+        adapter = requests.adapters.HTTPAdapter(pool_connections=20, pool_maxsize=20, max_retries=retry_strategy)
+        self.session.mount("https://", adapter)
+        self.session.mount("http://", adapter)
+
     def setup_tinker(self):
         # ... (keep existing implementation) ...
         with open("debug_api.txt", "a") as f:
@@ -167,6 +184,8 @@ class APIClient:
         include_seed=True,
         min_p=0.1,
         system=None,
+        use_rationale=True,
+        **kwargs
     ) -> str:
         """
         Generic chat-completion style call.
@@ -183,7 +202,7 @@ class APIClient:
 
         # Route to Tinker if configured
         if self.is_tinker and (model.startswith("tinker") or "tinker" in self.base_url):
-            return self.generate_tinker(prompt, temperature, max_tokens, system)
+            return self.generate_tinker(prompt, temperature, max_tokens, system, use_rationale=use_rationale, **kwargs)
 
         messages = [{"role": "user", "content": prompt}]
         if system:
@@ -331,7 +350,7 @@ class APIClient:
 
         for attempt in range(self.max_retries):
             try:
-                response = requests.post(
+                response = self.session.post(
                     url,
                     headers=headers,
                     json=payload,
@@ -349,7 +368,9 @@ class APIClient:
                 logging.warning(
                     f"Anthropic Request failed on attempt {attempt+1}: {e}"
                 )
-                time.sleep(self.retry_delay)
+                # Exponential backoff
+                wait_time = self.retry_delay * (2 ** attempt)
+                time.sleep(wait_time)
 
         raise RuntimeError(f"Failed to generate text from Anthropic after {self.max_retries} attempts")
 
@@ -381,76 +402,136 @@ class APIClient:
         return parsed_message["content"]
 
     def generate_tinker(
-        self, prompt: str, temperature: float, max_tokens: int, system: str = None
+        self,
+        prompt: str,
+        temperature: float,
+        max_tokens: int,
+        system: str = None,
+        use_rationale: bool = True,
+        feedback_rounds: int = 1,
     ) -> str:
         with open("debug_api.txt", "a") as f:
-            f.write("DEBUG: generate_tinker called (Feedback Descent)\n")
+            f.write(
+                f"DEBUG: generate_tinker called (rounds={feedback_rounds}, rationale={use_rationale})\n"
+            )
+        
+        current_prompt = prompt
+        history_buffer = []
+        final_response = ""
+
         try:
-            # 1. Generate two drafts (Base Model)
-            messages = [{"role": "user", "content": prompt}]
-            if system:
-                messages.insert(0, {"role": "system", "content": system})
+            for round_idx in range(1, feedback_rounds + 1):
+                with open("debug_api.txt", "a") as f:
+                    f.write(f"DEBUG: Starting Round {round_idx}/{feedback_rounds}\n")
+                
+                # If we have history, append it to the prompt for this round
+                # User requested: (draft A, draft B, verdict, rationale) roughly
+                round_context_prompt = current_prompt
+                if history_buffer:
+                    history_text = "\n\n".join(history_buffer)
+                    # We append history to the user prompt to inform the model of previous attempts
+                    round_context_prompt = (
+                        f"{current_prompt}\n\n"
+                        f"--- Previous Attempts History ---\n"
+                        f"{history_text}\n"
+                        f"---------------------------------\n"
+                        f"Using the above history/feedback to improve, please respond to the original request."
+                    )
+                
+                # 1. Generate two drafts (Base Model)
+                messages = [{"role": "user", "content": round_context_prompt}]
+                if system:
+                    messages.insert(0, {"role": "system", "content": system})
 
-            with open("debug_api.txt", "a") as f:
-                f.write("DEBUG: Generating Draft 1\n")
-            draft1 = self._tinker_sample_sync(
-                self.tinker_base_client, messages, temperature, max_tokens
-            )
-
-            with open("debug_api.txt", "a") as f:
-                f.write("DEBUG: Generating Draft 2\n")
-            draft2 = self._tinker_sample_sync(
-                self.tinker_base_client, messages, temperature, max_tokens
-            )
-
-            # 2. Criticize (Critic Model)
-            with open("debug_api.txt", "a") as f:
-                f.write("DEBUG: Criticizing\n")
-            critic_prompt = (
-                f"Here is a request:\n{prompt}\n\n"
-                f"Response A:\n{draft1}\n\n"
-                f"Response B:\n{draft2}\n\n"
-                "Which response is better and why?"
-            )
-            critic_messages = [{"role": "user", "content": critic_prompt}]
-            # Use low temp for critic
-            evaluation = self._tinker_sample_sync(
-                self.tinker_critic_client, critic_messages, 0.0, 1024
-            )
-
-            # 3. Parse Verdict
-            winner = draft1
-            cleaned_eval = evaluation.strip().lower()
-            if "response b" in cleaned_eval and "response a" not in cleaned_eval:
-                winner = draft2
-            elif "response a" in cleaned_eval and "response b" not in cleaned_eval:
-                winner = draft1
-            else:
-                # Regex Fallback
-                match = re.search(
-                    r"Verdict\**:\s*(Response [AB])", evaluation, re.IGNORECASE
+                with open("debug_api.txt", "a") as f:
+                    f.write(f"DEBUG: Round {round_idx} - Generating Draft 1\n")
+                draft1 = self._tinker_sample_sync(
+                    self.tinker_base_client, messages, temperature, max_tokens
                 )
-                if match and match.group(1).lower() == "response b":
+
+                with open("debug_api.txt", "a") as f:
+                    f.write(f"DEBUG: Round {round_idx} - Generating Draft 2\n")
+                draft2 = self._tinker_sample_sync(
+                    self.tinker_base_client, messages, temperature, max_tokens
+                )
+
+                # 2. Criticize (Critic Model)
+                with open("debug_api.txt", "a") as f:
+                    f.write(f"DEBUG: Round {round_idx} - Criticizing\n")
+                    
+                critic_prompt = (
+                    f"Here is a request:\n{current_prompt}\n\n" # Use original prompt for context
+                    f"Response A:\n{draft1}\n\n"
+                    f"Response B:\n{draft2}\n\n"
+                    "Which response is better and why?"
+                )
+                critic_messages = [{"role": "user", "content": critic_prompt}]
+                # Use low temp for critic
+                evaluation = self._tinker_sample_sync(
+                    self.tinker_critic_client, critic_messages, 0.0, 1024
+                )
+
+                # 3. Parse Verdict
+                winner = draft1
+                cleaned_eval = evaluation.strip().lower()
+                winning_response_str = "Response A"
+                
+                # Simple parsing logic
+                if "response b" in cleaned_eval and "response a" not in cleaned_eval:
                     winner = draft2
+                    winning_response_str = "Response B"
+                elif "response a" in cleaned_eval and "response b" not in cleaned_eval:
+                    winner = draft1
+                else:
+                    # Regex Fallback
+                    match = re.search(
+                        r"Verdict\**:\s*(Response [AB])", evaluation, re.IGNORECASE
+                    )
+                    if match and match.group(1).lower() == "response b":
+                        winner = draft2
+                        winning_response_str = "Response B"
 
-            with open("debug_api.txt", "a") as f:
-                f.write("DEBUG: Winner selected. Refining...\n")
+                with open("debug_api.txt", "a") as f:
+                    f.write(f"DEBUG: Round {round_idx} - Winner selected ({winning_response_str})\n")
 
-            # 4. Refine (Base Model)
-            refine_prompt = (
-                f"Here is a request:\n{prompt}\n\n"
-                f"Draft Response:\n{winner}\n\n"
-                f"Feedback:\n{evaluation}\n\n"
-                "Please rewrite the response to address the feedback."
-            )
-            refine_messages = [{"role": "user", "content": refine_prompt}]
-            refined = self._tinker_sample_sync(
-                self.tinker_base_client, refine_messages, temperature, max_tokens
-            )
+                # 4. Refine (Base Model)
+                if use_rationale:
+                    refine_prompt_text = (
+                        f"Here is a request:\n{current_prompt}\n\n"
+                        f"Draft Response:\n{winner}\n\n"
+                        f"Feedback:\n{evaluation}\n\n"
+                        "Please rewrite the response to address the feedback."
+                    )
+                else:
+                    refine_prompt_text = (
+                        f"Here is a request:\n{current_prompt}\n\n"
+                        f"Draft Response:\n{winner}\n\n"
+                        f"Feedback: {winning_response_str} was selected as the better response.\n\n"
+                        "Please rewrite the response to be even better."
+                    )
+                
+                refine_messages = [{"role": "user", "content": refine_prompt_text}]
+                refined = self._tinker_sample_sync(
+                    self.tinker_base_client, refine_messages, temperature, max_tokens
+                )
+                
+                final_response = refined # specific round result
+                
+                # Add to history for next round
+                round_history_entry = (
+                    f"--- Round {round_idx} ---\n"
+                    f"Draft 1:\n{draft1}\n\n"
+                    f"Draft 2:\n{draft2}\n\n"
+                    f"Critic Evaluation:\n{evaluation}\n"
+                    f"Selected Winner: {winning_response_str}\n" 
+                    f"Refined Output:\n{refined}\n"
+                )
+                history_buffer.append(round_history_entry)
 
-            with open("debug_api.txt", "a") as f:
-                f.write("DEBUG: Refinement complete\n")
-            return refined
+                with open("debug_api.txt", "a") as f:
+                    f.write(f"DEBUG: Round {round_idx} Complete\n")
+
+            return final_response
 
         except Exception as e:
             with open("debug_api.txt", "a") as f:
