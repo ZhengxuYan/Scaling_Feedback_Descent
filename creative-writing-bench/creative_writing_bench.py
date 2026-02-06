@@ -119,7 +119,7 @@ def main():
     # --- New Argument ---
     parser.add_argument("--no-elo", action="store_true", default=False, help="Disable the ELO analysis step.")
     parser.add_argument("--no-rationale", action="store_true", default=False, help="If set, Tinker models will use only the verdict (no rationale) for refinement.")
-    parser.add_argument("--feedback-rounds", type=int, default=1, help="Number of feedback descent rounds for Tinker models (default: 1).")
+    parser.add_argument("--feedback-rounds", type=int, default=0, help="Number of feedback descent rounds for Tinker models (default: 0).")
 
     args = parser.parse_args()
     setup_logging(get_verbosity(args.verbosity))

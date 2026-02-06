@@ -42,6 +42,7 @@ class APIClient:
         self.is_tinker = False
         self.tinker_client = None
         self.tinker_renderer = None
+        self.tinker_critic_renderer = None
 
         if model_type == "test":
             self.api_key = os.getenv("TEST_API_KEY", os.getenv("OPENAI_API_KEY"))
@@ -90,6 +91,15 @@ class APIClient:
                 f"Initialized {self.model_type} API client with URL: {self.base_url}"
             )
 
+        # Gemini API Key
+        self.gemini_api_key = os.getenv("GEMINI_API_KEY")
+        self.is_gemini = False
+        if self.gemini_api_key and (
+            "gemini" in (self.model_type or "").lower() or "google" in (self.base_url or "").lower()
+        ):
+             # Basic heuristic, though usually we check model name at generate time
+             self.is_gemini = True
+
         # Create a shared session for connection pooling with robust retries
         self.session = requests.Session()
         
@@ -122,54 +132,83 @@ class APIClient:
         base_model_name = os.getenv(
             "TINKER_BASE_MODEL", "Qwen/Qwen3-235B-A22B-Instruct-2507"
         )
+        critic_base_model_name = os.getenv(
+            "TINKER_CRITIC_BASE_MODEL", base_model_name
+        )
         model_path = os.getenv("TINKER_MODEL_PATH")  # Optional, for trained weights
 
         logging.info(
-            f"Initializing Tinker client with Base: {base_model_name}, Path: {model_path}"
+            f"Initializing Tinker client with Base: {base_model_name}, Critic Base: {critic_base_model_name}, Path: {model_path}"
         )
         with open("debug_api.txt", "a") as f:
-            f.write(f"DEBUG: Init Tinker with {base_model_name}, {model_path}\n")
+            f.write(f"DEBUG: Init Tinker with {base_model_name}, {critic_base_model_name}, {model_path}\n")
 
         try:
             service_client = tinker.ServiceClient(api_key=tinker_api_key)
             with open("debug_api.txt", "a") as f:
                 f.write("DEBUG: ServiceClient created\n")
+            
+            # --- Generator Setup ---
             tokenizer = tokenizer_utils.get_tokenizer(base_model_name)
             with open("debug_api.txt", "a") as f:
-                f.write("DEBUG: Tokenizer created\n")
+                f.write("DEBUG: Generator Tokenizer created\n")
 
             # Base Client (Generator)
             self.tinker_base_client = service_client.create_sampling_client(
                 base_model=base_model_name
             )
+            
+            renderer_name = model_info.get_recommended_renderer_name(base_model_name)
+            self.tinker_renderer = renderers.get_renderer(
+                renderer_name, tokenizer=tokenizer
+            )
             with open("debug_api.txt", "a") as f:
-                f.write("DEBUG: Base SamplingClient created\n")
+                f.write("DEBUG: Base SamplingClient & Renderer created\n")
+
+            # --- Critic Setup ---
+            
+            # If critic base model is different, we need a new tokenizer/renderer
+            if critic_base_model_name != base_model_name:
+                 critic_tokenizer = tokenizer_utils.get_tokenizer(critic_base_model_name)
+                 critic_renderer_name = model_info.get_recommended_renderer_name(critic_base_model_name)
+                 self.tinker_critic_renderer = renderers.get_renderer(
+                     critic_renderer_name, tokenizer=critic_tokenizer
+                 )
+                 with open("debug_api.txt", "a") as f:
+                    f.write(f"DEBUG: Critic Tokenizer & Renderer created for {critic_base_model_name}\n")
+            else:
+                 self.tinker_critic_renderer = self.tinker_renderer
 
             # Critic Client (Evaluator)
             if model_path:
+                # If we have a specific trained path, we use that on top of the CRITIC base model
                 self.tinker_critic_client = service_client.create_sampling_client(
-                    base_model=base_model_name, model_path=model_path
+                    base_model=critic_base_model_name, model_path=model_path
                 )
                 with open("debug_api.txt", "a") as f:
-                    f.write("DEBUG: Critic SamplingClient created\n")
+                    f.write("DEBUG: Critic SamplingClient (Custom Path) created\n")
+            elif critic_base_model_name != base_model_name:
+                # No trained path, but different base model
+                self.tinker_critic_client = service_client.create_sampling_client(
+                     base_model=critic_base_model_name
+                )
+                with open("debug_api.txt", "a") as f:
+                    f.write("DEBUG: Critic SamplingClient (Different Base) created\n")
             else:
+                # Same base model, no trained path -> fallback to same client
                 logging.warning(
-                    "No TINKER_MODEL_PATH set for critic. Using base model as critic."
+                    "No TINKER_MODEL_PATH set for critic and same base model. Using base client as critic."
                 )
                 with open("debug_api.txt", "a") as f:
-                    f.write("DEBUG: No Critic path, using base as critic\n")
+                    f.write("DEBUG: No Critic path/diff base, using base as critic\n")
                 self.tinker_critic_client = self.tinker_base_client
 
             # Maintain backward compatibility if needed, though we use base/critic explicitly now
             self.tinker_client = self.tinker_base_client
 
-            renderer_name = model_info.get_recommended_renderer_name(base_model_name)
-            self.tinker_renderer = renderers.get_renderer(
-                renderer_name, tokenizer=tokenizer
-            )
             logging.info("Tinker client initialized successfully.")
             with open("debug_api.txt", "a") as f:
-                f.write("DEBUG: Renderer created. Success.\n")
+                f.write("DEBUG: Tinker setup complete.\n")
         except Exception as e:
             logging.error(f"Failed to initialize Tinker client: {e}")
             with open("debug_api.txt", "a") as f:
@@ -192,18 +231,87 @@ class APIClient:
         Generic chat-completion style call.
         """
         # Lazy init Tinker if needed
+        # We now also check TINKER_BASE_MODEL env var to support custom model names (e.g. "kimi-k2")
+        tinker_env_model = os.getenv("TINKER_BASE_MODEL")
         if not self.is_tinker and (
-            "tinker" in model.lower() or "tinker" in self.base_url
+            "tinker" in model.lower() or "tinker" in self.base_url or tinker_env_model
         ):
             self.setup_tinker()
+
+        # Apply Model Name Substitution (Global)
+        # This allows users to use aliases (e.g. gemini-2.5-flash-vanilla -> gemini-2.5-flash)
+        # to separate ELO results while calling the correct API.
+        if model in MODEL_NAME_SUBS:
+             logging.info(f"Substituting model alias: {model} -> {MODEL_NAME_SUBS[model]}")
+             model = MODEL_NAME_SUBS[model]
 
         # Route to Anthropic if configured
         if self.is_anthropic or model.startswith("anthropic/"):
              return self.generate_anthropic(model, prompt, temperature, max_tokens, system)
 
         # Route to Tinker if configured
-        if self.is_tinker and (model.startswith("tinker") or "tinker" in self.base_url):
+        # We check explicitly for tinker prefix OR if TINKER_BASE_MODEL is set and aligns with intent
+        # If the user sets TINKER_BASE_MODEL, we assume they want to use Tinker for this generation unless it matches another specific handler
+        # To avoid hijacking, we might want to be careful, but here we assume if TINKER_BASE_MODEL is present, we prefer Tinker
+        # UNLESS the model name explicitly points to another known provider (like gemini/anthropic)
+        is_explicit_tinker = model.startswith("tinker") or "tinker" in self.base_url
+        is_implicit_tinker = self.is_tinker and tinker_env_model and not (
+            model.startswith("gemini/") or model.startswith("google/") or "gemini" in model.lower() or
+            model.startswith("anthropic/") or "claude" in model.lower() or
+            model.startswith("gpt-") or "openai" in model.lower()
+        )
+        
+        if self.is_tinker and (is_explicit_tinker or is_implicit_tinker):
             return self.generate_tinker(prompt, temperature, max_tokens, system, use_rationale=use_rationale, **kwargs)
+
+        # Route to Gemini if configured
+        if model.lower().startswith("gemini/") or model.lower().startswith("google/") or "gemini" in model.lower():
+             feedback_rounds = kwargs.get("feedback_rounds", 0)
+             
+             if feedback_rounds >= 1:
+                 # Check if we should/can run the hybrid loop
+                 # We attempt it for any rounds >= 1 to ensure consistent behavior (Best of 2 + History)
+                 # IF Tinker is available.
+                 loop_possible = False
+                 try:
+                     if not self.is_tinker:
+                         self.setup_tinker()
+                     if self.is_tinker:
+                         loop_possible = True
+                 except Exception:
+                     pass
+             
+                 if loop_possible:
+                     # Hybrid Loop: Gemini Generator + Tinker Critic
+                     
+                     # Define wrappers
+                     def gemini_generator(messages, temp, max_tok):
+                         # Extract user prompt from messages
+                         user_text = messages[-1]["content"] if messages else ""
+                         sys_text = messages[0]["content"] if messages and messages[0]["role"] == "system" else system
+                         return self.generate_gemini(model, user_text, temp, max_tok, sys_text)
+                     
+                     critic_client = self.tinker_critic_client if self.tinker_critic_client else self.tinker_base_client
+                     def tinker_critic(messages, temp, max_tok):
+                         return self._tinker_sample_sync(critic_client, self.tinker_critic_renderer, messages, temp, max_tok)
+                         
+                     # Filter kwargs to remove feedback_rounds if present to avoid dup
+                     kwargs_filtered = {k: v for k, v in kwargs.items() if k != "feedback_rounds"}
+                     
+                     return self._run_feedback_loop(
+                         prompt, temperature, max_tokens, 
+                         gemini_generator, tinker_critic,
+                         system=system, use_rationale=use_rationale, 
+                         feedback_rounds=feedback_rounds, **kwargs_filtered
+                     )
+             
+             # Fallback to simple generation if loop not requested OR Tinker not available
+             if feedback_rounds >= 1 and not loop_possible:
+                  pass # Fall through to simple generation below
+             elif feedback_rounds > 1:
+                  raise RuntimeError("Tinker is required for feedback loop (rounds > 1) but failed to initialize.")
+                 
+             return self.generate_gemini(model, prompt, temperature, max_tokens, system)
 
         messages = [{"role": "user", "content": prompt}]
         if system:
@@ -375,8 +483,84 @@ class APIClient:
 
         raise RuntimeError(f"Failed to generate text from Anthropic after {self.max_retries} attempts")
 
-    def _tinker_sample_sync(self, client, messages, temperature, max_tokens):
-        model_input = self.tinker_renderer.build_generation_prompt(
+    def generate_gemini(
+        self,
+        model: str,
+        prompt: str,
+        temperature: float = 0.0,
+        max_tokens: int = 2048,
+        system: str = None,
+    ) -> str:
+        """
+        Direct call to Google Gemini API via REST.
+        """
+        # Strip prefixes if present
+        real_model = model.replace("gemini/", "").replace("google/", "")
+        
+        # https://ai.google.dev/api/rest/v1beta/models/generateContent
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{real_model}:generateContent"
+        
+        params = {"key": self.gemini_api_key}
+        headers = {
+            "Content-Type": "application/json"
+        }
+
+        # Gemini Content Structure
+        contents = [{"role": "user", "parts": [{"text": prompt}]}]
+        
+        # System instructions (Gemini 1.5+ supports this via system_instruction)
+        payload = {
+            "contents": contents,
+            "generationConfig": {
+                "temperature": temperature,
+                "maxOutputTokens": max_tokens,
+            }
+        }
+        
+        if system:
+             payload["system_instruction"] = {
+                 "parts": [{"text": system}]
+             }
+
+        for attempt in range(self.max_retries):
+            try:
+                response = self.session.post(
+                    url,
+                    headers=headers,
+                    params=params, 
+                    json=payload,
+                    timeout=self.request_timeout,
+                )
+                
+                if response.status_code != 200:
+                    logging.error(f"Gemini API Error: {response.text}")
+                
+                response.raise_for_status()
+                data = response.json()
+                
+                # Handling safe path
+                if "candidates" in data and len(data["candidates"]) > 0:
+                    candidate = data["candidates"][0]
+                    if "content" in candidate and "parts" in candidate["content"]:
+                         return candidate["content"]["parts"][0]["text"]
+                    elif "finishReason" in candidate and candidate["finishReason"] != "STOP":
+                         logging.warning(f"Gemini finish reason: {candidate['finishReason']}")
+                         if "content" not in candidate:
+                             raise ValueError("Empty response from Gemini (filtered?)")
+                else:
+                    raise ValueError(f"Unrecognized Gemini response format: {str(data)[:200]}...")
+                    
+            except Exception as e:
+                logging.warning(
+                    f"Gemini Request failed on attempt {attempt+1}: {e}"
+                )
+                wait_time = self.retry_delay * (2 ** attempt)
+                time.sleep(wait_time)
+
+        raise RuntimeError(f"Failed to generate text from Gemini after {self.max_retries} attempts")
+
+    def _tinker_sample_sync(self, client, renderer, messages, temperature, max_tokens):
+        model_input = renderer.build_generation_prompt(
             [renderers.Message(role=m["role"], content=m["content"]) for m in messages]
         )
         temp = max(0.01, temperature)
@@ -386,7 +570,7 @@ class APIClient:
             sampling_params=tinker.SamplingParams(
                 temperature=temp,
                 max_tokens=max_tokens,
-                stop=self.tinker_renderer.get_stop_sequences(),
+                stop=renderer.get_stop_sequences(),
             ),
         )
         if hasattr(future, "result"):
@@ -397,7 +581,7 @@ class APIClient:
         else:
             response = future
 
-        parsed_message, _ = self.tinker_renderer.parse_response(
+        parsed_message, _ = renderer.parse_response(
             response.sequences[0].tokens
         )
         return parsed_message["content"]
@@ -412,189 +596,238 @@ class APIClient:
         feedback_rounds: int = 1,
         **kwargs
     ) -> str:
+        # Wrapper for pure Tinker loop
+        
+        def tinker_generator(messages, temp, max_tok):
+            return self._tinker_sample_sync(self.tinker_base_client, self.tinker_renderer, messages, temp, max_tok)
+            
+        critic_client = self.tinker_critic_client if self.tinker_critic_client else self.tinker_base_client
+        def tinker_critic(messages, temp, max_tok):
+            return self._tinker_sample_sync(critic_client, self.tinker_critic_renderer, messages, temp, max_tok)
+            
+        if feedback_rounds < 1:
+            # Vanilla generation
+            messages = [{"role": "user", "content": prompt}]
+            if system:
+                messages.insert(0, {"role": "system", "content": system})
+            return tinker_generator(messages, temperature, max_tokens)
+
+        return self._run_feedback_loop(
+            prompt, temperature, max_tokens,
+            tinker_generator, tinker_critic,
+            system, use_rationale, feedback_rounds, **kwargs
+        )
+
+    def _run_feedback_loop(
+        self,
+        prompt: str,
+        temperature: float,
+        max_tokens: int,
+        generator_func,
+        critic_func,
+        system: str = None,
+        use_rationale: bool = True,
+        feedback_rounds: int = 1,
+        **kwargs
+    ) -> str:
         with open("debug_api.txt", "a") as f:
             f.write(
-                f"DEBUG: generate_tinker called (rounds={feedback_rounds}, rationale={use_rationale})\n"
+                f"DEBUG: _run_feedback_loop called (rounds={feedback_rounds}, rationale={use_rationale})\n"
             )
         
         current_prompt = prompt
         history_buffer = []
-        final_response = ""
-
+        structured_history = []
+        
+        # Track the best response found so far
+        current_best_response = None
+        
         try:
             for round_idx in range(1, feedback_rounds + 1):
                 with open("debug_api.txt", "a") as f:
                     f.write(f"DEBUG: Starting Round {round_idx}/{feedback_rounds}\n")
                 
-                # If we have history, append it to the prompt for this round
-                # User requested: (draft A, draft B, verdict, rationale) roughly
+                # =======================================================
+                # 1. GENERATION PHASE
+                # =======================================================
+                
+                # Context construction
                 round_context_prompt = current_prompt
                 if history_buffer:
                     history_text = "\n\n".join(history_buffer)
-                    # We append history to the user prompt to inform the model of previous attempts
-                    round_context_prompt = (
-                        f"{current_prompt}\n\n"
-                        f"--- Previous Attempts History ---\n"
-                        f"{history_text}\n"
-                        f"---------------------------------\n"
-                        f"Using the above history/feedback to improve, please respond to the original request."
-                    )
+                    
+                    refinement_template = kwargs.get("refinement_prompt_template")
+                    if refinement_template:
+                        # Support simplified format requiring {prompt} and {history}
+                        # We allow tolerant formatting to avoid crashes
+                        try:
+                            round_context_prompt = refinement_template.replace("{prompt}", current_prompt).replace("{history}", history_text)
+                        except Exception as e:
+                            logging.warning(f"Failed to format custom template: {e}. Using default.")
+                            refinement_template = None
+                    
+                    if not refinement_template:
+                        # Default Prompt (Optimization: 'fix_weaknesses' - 60% Win Rate)
+                        round_context_prompt = (
+                            f"{current_prompt}\n\n"
+                            f"HISTORY:\n{history_text}\n"
+                            f"TASK: Fix the weaknesses identified in the critique.\n"
+                            f"Instruction: Address every point in the feedback history. "
+                            f"Ensure the new draft has no flaws and fully refines the areas that were criticized. "
+                            f"Do not add unnecessary flair; just make it solid and correct.\n"
+                            f"Output the final story text only."
+                        )
                 
-                if round_idx == 1:
-                     structured_history = []
-                
-                # 1. Generate two drafts (Base Model)
                 messages = [{"role": "user", "content": round_context_prompt}]
                 if system:
                     messages.insert(0, {"role": "system", "content": system})
 
-                with open("debug_api.txt", "a") as f:
-                    f.write(f"DEBUG: Round {round_idx} - Generating Draft 1\n")
-                draft1 = self._tinker_sample_sync(
-                    self.tinker_base_client, messages, temperature, max_tokens
-                )
+                if round_idx == 1:
+                    # Round 1: Generate TWO drafts (Cold Start)
+                    with open("debug_api.txt", "a") as f:
+                        f.write(f"DEBUG: Round 1 - Generating Draft 1 & 2\n")
+                    
+                    draft_a = generator_func(messages, temperature, max_tokens)
+                    draft_b = generator_func(messages, temperature, max_tokens)
+                    
+                    challenger = draft_a
+                    incumbent = draft_b # In Round 1, incumbent is just the second draft
+                    
+                else:
+                    # Round N: Generate ONE draft (Challenger) using History
+                    # The incumbent is the current_best_response from previous rounds
+                    with open("debug_api.txt", "a") as f:
+                        f.write(f"DEBUG: Round {round_idx} - Generating Challenger\n")
+                    
+                    draft_new = generator_func(messages, temperature, max_tokens)
+                    
+                    challenger = draft_new
+                    incumbent = current_best_response
 
-                with open("debug_api.txt", "a") as f:
-                    f.write(f"DEBUG: Round {round_idx} - Generating Draft 2\n")
-                draft2 = self._tinker_sample_sync(
-                    self.tinker_base_client, messages, temperature, max_tokens
-                )
-
-                # 2. Criticize (Critic Model)
+                # =======================================================
+                # 2. COMPARISON PHASE (Critic)
+                # =======================================================
+                # Convention: Draft A is Challenger, Draft B is Incumbent
+                
                 with open("debug_api.txt", "a") as f:
                     f.write(f"DEBUG: Round {round_idx} - Criticizing\n")
                     
                 critic_prompt = (
                     f"Here is a writing prompt:\n{current_prompt}\n\n"
-                    f"Draft A:\n{draft1}\n\n"
-                    f"Draft B:\n{draft2}\n\n"
+                    f"Draft A:\n{challenger}\n\n"
+                    f"Draft B:\n{incumbent}\n\n"
                     "Which draft is better and why?"
                 )
                 critic_messages = [{"role": "user", "content": critic_prompt}]
-                # Use low temp for critic
-                evaluation = self._tinker_sample_sync(
-                    self.tinker_critic_client, critic_messages, 0.0, 1024
-                )
+                
+                evaluation = critic_func(critic_messages, 0.0, 1024)
 
                 with open("debug_api.txt", "a") as f:
-                    f.write(f"DEBUG: Round {round_idx} - Content of Evaluation:\n{evaluation}\n")
+                    f.write(f"DEBUG: Round {round_idx} - Eval length: {len(evaluation)}\n")
 
-                # 3. Parse Verdict
-                winner = draft1
+                # =======================================================
+                # 3. VERDICT PARSING
+                # =======================================================
+                
                 cleaned_eval = evaluation.strip().lower()
-                winning_response_str = "Draft A" # Default label
-                
-                # Robust parsing logic based on trained format "**Verdict**: ..."
-                # We look for the "Verdict" pattern first
+                winning_label = "Draft B" # Default to Incumbent (Safe choice)
+                winner_is_challenger = False 
+
+                # Parsing logic trying to find explicit Verdict first
                 verdict_match = re.search(r"\*\*Verdict\*\*:\s*(.*)", evaluation, re.IGNORECASE)
-                
-                is_b_winner = False
                 
                 if verdict_match:
                     verdict_text = verdict_match.group(1).strip().lower()
-                    # Check for B variants
-                    if "draft b" in verdict_text or "response b" in verdict_text or "summary b" in verdict_text:
-                        is_b_winner = True
-                        winning_response_str = "Draft B"
-                    elif "draft a" in verdict_text or "response a" in verdict_text or "summary a" in verdict_text:
-                        is_b_winner = False
-                        winning_response_str = "Draft A"
+                    if "draft a" in verdict_text or "response a" in verdict_text:
+                        winner_is_challenger = True
+                        winning_label = "Draft A"
+                    elif "draft b" in verdict_text or "response b" in verdict_text:
+                        winner_is_challenger = False
+                        winning_label = "Draft B"
                     else:
-                         # Ambiguous verdict line, fall back to broader check
-                         with open("debug_api.txt", "a") as f:
-                             f.write(f"DEBUG: Ambiguous verdict line '{verdict_text}', falling back\n")
-                         if "draft b" in cleaned_eval or "response b" in cleaned_eval:
-                             is_b_winner = True
-                             winning_response_str = "Draft B"
+                        # Ambiguous verdict text, check body
+                         if "draft a" in cleaned_eval and "draft b" not in cleaned_eval:
+                             winner_is_challenger = True
+                             winning_label = "Draft A"
                 else:
-                    # Fallback if specific formatting is missing (model failed to follow implicit format)
-                    if "draft b" in cleaned_eval or "response b" in cleaned_eval:
-                        # Check strictly if A is NOT mentioned or mentioned in negative context? 
-                        # Simple existence check is risky but better than nothing if format failed.
-                        # For safety, let's prefer explicit signals.
-                        # Using the previous fallback logic:
-                        if "draft b" in cleaned_eval and "draft a" not in cleaned_eval:
-                             is_b_winner = True
-                             winning_response_str = "Draft B"
+                    # Fallback strategies
+                    match = re.search(r"Verdict\**:\s*(Draft|Response) [AB]", evaluation, re.IGNORECASE)
+                    if match:
+                        if " a" in match.group(0).lower():
+                            winner_is_challenger = True
+                            winning_label = "Draft A"
                         else:
-                             # Try regex for other variations
-                             match = re.search(r"Verdict\**:\s*(Draft|Response|Summary|Story) [AB]", evaluation, re.IGNORECASE)
-                             if match:
-                                  if " b" in match.group(0).lower():
-                                       is_b_winner = True
-                                       winning_response_str = "Draft B"
+                            winner_is_challenger = False
+                            winning_label = "Draft B"
+                    else:
+                        # Logic: if A is mentioned but B isn't, maybe A won? 
+                        # This is risky, but let's stick to safe default (B) unless A is explicitly favored?
+                        if "draft a" in cleaned_eval and "draft b" not in cleaned_eval:
+                             winner_is_challenger = True
+                             winning_label = "Draft A"
 
-                if is_b_winner:
-                    winner = draft2
-                    winning_response_str = "Draft B"
+                # Update Best Response
+                if winner_is_challenger:
+                    current_best_response = challenger
                 else:
-                    winner = draft1
-                    winning_response_str = "Draft A"
+                    current_best_response = incumbent
 
                 with open("debug_api.txt", "a") as f:
-                    f.write(f"DEBUG: Round {round_idx} - Winner selected ({winning_response_str})\n")
+                    f.write(f"DEBUG: Round {round_idx} Winner: {winning_label}\n")
 
-                # 4. Refine (Base Model)
-                if use_rationale:
-                    refine_prompt_text = (
-                        f"Here is a request:\n{current_prompt}\n\n"
-                        f"Draft Response:\n{winner}\n\n"
-                        f"Feedback:\n{evaluation}\n\n"
-                        "Please rewrite the response to address the feedback."
+                # =======================================================
+                # 4. HISTORY UPDATE
+                # =======================================================
+                
+                # Helper description for history
+                if round_idx == 1:
+                    history_entry = (
+                        f"--- Round 1 ---\n"
+                        f"Draft A:\n{challenger}\n\n"
+                        f"Draft B:\n{incumbent}\n\n"
+                        f"Critic Evaluation:\n{evaluation}\n"
+                        f"Selected Winner: {winning_label}\n"
                     )
                 else:
-                    refine_prompt_text = (
-                        f"Here is a request:\n{current_prompt}\n\n"
-                        f"Draft Response:\n{winner}\n\n"
-                        f"Feedback: {winning_response_str} was selected as the better response.\n\n"
-                        "Please rewrite the response to be even better."
+                    # For future rounds, Draft A is the NEW attempt, Draft B was the PREVIOUS Best
+                    history_entry = (
+                        f"--- Round {round_idx} ---\n"
+                        f"New Challenger (Draft A):\n{challenger}\n\n"
+                        f"Previous Best (Draft B):\n{incumbent}\n\n"
+                        f"Critic Evaluation:\n{evaluation}\n"
+                        f"Selected Winner: {winning_label}\n"
                     )
                 
-                refine_messages = [{"role": "user", "content": refine_prompt_text}]
-                refined = self._tinker_sample_sync(
-                    self.tinker_base_client, refine_messages, temperature, max_tokens
-                )
+                history_buffer.append(history_entry)
                 
-                final_response = refined # specific round result
-                
-                # Add to history for next round
-                round_history_entry = (
-                    f"--- Round {round_idx} ---\n"
-                    f"Draft 1:\n{draft1}\n\n"
-                    f"Draft 2:\n{draft2}\n\n"
-                    f"Critic Evaluation:\n{evaluation}\n"
-                    f"Selected Winner: {winning_response_str}\n" 
-                    f"Refined Output:\n{refined}\n"
-                )
-                history_buffer.append(round_history_entry)
-
-                # Collect structured data
+                # Structured data
                 round_data = {
                     "round": round_idx,
-                    "draft1": draft1,
-                    "draft2": draft2,
-                    "critic_evaluation": evaluation,
-                    "verdict": winning_response_str,
-                    "winner_content": winner,
-                    "refined_response": refined
+                    "draft_a_challenger": challenger,
+                    "draft_b_incumbent": incumbent,
+                    "evaluation": evaluation,
+                    "verdict": winning_label,
+                    "winner_content": current_best_response
                 }
                 structured_history.append(round_data)
 
-                with open("debug_api.txt", "a") as f:
-                    f.write(f"DEBUG: Round {round_idx} Complete\n")
+            # END LOOP
             
             # Save history to JSON
             try:
                 history_dir = "tinker_history"
+                
+                run_id = kwargs.get('run_id')
+                if run_id:
+                     run_id = re.sub(r'[^a-zA-Z0-9_-]', '_', str(run_id))
+                     history_dir = os.path.join(history_dir, run_id)
+
                 if not os.path.exists(history_dir):
                     os.makedirs(history_dir)
                 
-                # Get context from kwargs
                 p_id = kwargs.get('prompt_id', 'unknown_prompt')
-                # Sanitize prompt id slightly
                 p_id = re.sub(r'[^a-zA-Z0-9_-]', '_', p_id)
                 
-                # Create filename
                 timestamp = int(time.time())
                 unique_id = uuid.uuid4().hex[:8]
                 filename = f"{history_dir}/history_{p_id}_{timestamp}_{unique_id}.json"
@@ -605,7 +838,7 @@ class APIClient:
                     "seed_modifier": kwargs.get('seed_modifier'),
                     "original_prompt": prompt,
                     "rounds": structured_history,
-                    "final_response": final_response
+                    "final_response": current_best_response
                 }
                 
                 with open(filename, "w", encoding="utf-8") as f:
@@ -619,7 +852,7 @@ class APIClient:
                 with open("debug_api.txt", "a") as f:
                     f.write(f"DEBUG: Failed to save history: {e}\n")
 
-            return final_response
+            return current_best_response
 
         except Exception as e:
             with open("debug_api.txt", "a") as f:

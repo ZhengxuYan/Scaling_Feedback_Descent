@@ -37,4 +37,5 @@ MODEL_NAME_SUBS = {
     "openrouter/cypher-alpha:free": "openrouter/cypher-alpha",
     "moonshotai/kimi-k2": "moonshotai/Kimi-K2-Instruct",
     'z-ai/glm-4.5': 'zai-org/GLM-4.5',
+    'gemini-2.5-flash-vanilla': 'gemini-2.5-flash',
 }
