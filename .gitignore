@@ -22,6 +22,9 @@ outputs/
 # Ignore images
 *.png
 
+# Ignore Refinement History
+/refinement_history
+
 CLAUDE.md
 .claude
 *.pyc
@@ -29,3 +32,4 @@ CLAUDE.md
 uv.lock
 creative-writing-bench/results/
 creative-writing-bench/data/pairwise_*.jsonl
+feedsum/data/

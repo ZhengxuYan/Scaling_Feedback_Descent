@@ -7,7 +7,7 @@ import seaborn as sns
 import pandas as pd
 from pathlib import Path
 from collections import defaultdict
-import text_metrics
+import creative-writing-bench.text_metrics
 
 def load_all_runs(file_path):
     """Load the entire runs JSON file."""

@@ -1,0 +1,81 @@
+generator_default: |
+  You are a helpful assistant.
+feedback_default: |
+  Evaluate the following text and provide a verdict.
+
+generation_template: |
+  I will provide you a research scenario. You have to provide me a concise yet thoughtful research plan with all details needed to execute it.
+
+  Here is the research scenario.
+  Scenario: {scenario}
+
+  {rubric_section}
+
+  Overall Solution Guidelines:
+  • The plan should address the goals of the scenario, and account for all constraints and confounders.
+  • Do NOT just say WHAT you will do. Explain HOW you will do it and WHY it is needed. Provide clear explanation and justification for each proposed step. The solution inside <solution></solution> tags should be readable for humans, and not in XML itself.
+  • The phrasing should NOT be verbose, and NOT be in past tense, as in 'the author's approach' but rather in present tense, as how you would approach the problem.
+  • Do not claim to have done any experiments or have results, just provide the plan.
+  • Do not add self-proclaimed praises of your solution. For example do NOT say yourself it satisfies some desiderata, we will let the evaluator decide that.
+
+  Output Format
+
+  You can think before you give the final solution, but only the final solution will be judged so make sure to include (potentially repeat) all details in it.
+  Put the final solution, the full detailed research plan, inside <solution> </solution> XML tags. This should be information dense, maximum 750 words.
+
+refinement_feedback_template: |
+  Evaluate which of the two Proposed Research Plans is better for the Research Scenario based on the provided evaluation criteria.
+
+  # Research Scenario
+  {scenario}
+
+  # Rubric
+  {rubric_items}
+
+  {reference_section}
+
+  # Proposed Research Plan A
+  {plan_a}
+
+  # Proposed Research Plan B
+  {plan_b}
+
+  **DESIDERATA**
+  1. HANDLES ALL CRITERIA: Does the plan satisfy all criteria mentioned in the rubric item?
+  2. DETAILED, SPECIFIC SOLUTION: Does the part of the plan relevant to satisfying this rubric item include fully specified details on HOW to implement it? There should be no self-proclaimed claims of handling something without doing so.
+  3. NO OVERLOOKED FLAWS OR WEAKNESSES: Are there any important overlooked flaws or weaknesses?
+  4. WELL JUSTIFIED RATIONALE: Is the plan well-motivated and justified?
+  5. COST AND EFFORT EFFICIENT: Does the plan handle this cost efficiently?
+  6. NO ETHICAL ISSUES: Does the plan have any potential for negative consequences?
+  7. CONSISTENT WITH OVERALL PLAN: Is the plan consistent?
+
+  # Instructions
+  First, compare the two plans against the rubric and desiderata. Identify the strengths and weaknesses of each.
+  Then, provide a verdict indicating which plan is better, and a clear text rationale explaining why.
+  IMPORTANT: In your rationale, do NOT quote the exact rubric items. Discuss the concepts they represent, but do not leak the specific wording of the rubric.
+
+  Please output your response in the following format:
+  Rationale: [Your detailed comparison and justification]
+  Verdict: [Plan A or Plan B]
+
+refinement_generation_template: |
+  I will provide you a research scenario and two draft research plans (Plan A and Plan B) along with a critique comparing them. You have to provide an improved, concise yet thoughtful research plan based on the winner.
+
+  Here is the research scenario.
+  Scenario: {scenario}
+
+  {rubric_section}
+
+  Here is Draft Plan A:
+  {plan_a}
+
+  Here is Draft Plan B:
+  {plan_b}
+
+  Here is the Critique and Verdict:
+  Verdict: {verdict}
+  Rationale: {rationale}
+
+  INSTRUCTION: Revise the winning plan ({verdict}) to further improve it based on the feedback. Keep the good parts but address any weaknesses mentioned in the rationale. You can also incorporate any strong points from the losing plan if relevant.
+  The solution inside <solution></solution> tags should be readable for humans, and not in XML itself.
+  Output Format: Put the final improved solution inside <solution> </solution> XML tags.

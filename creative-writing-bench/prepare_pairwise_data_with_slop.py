@@ -9,7 +9,7 @@ from datasets import Dataset, DatasetDict
 
 # Add parent directory to path to import text_metrics
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from text_metrics import compute_metrics
+from creative-writing-bench.text_metrics import compute_metrics
 
 # Metrics where lower is better
 NEGATIVE_METRICS = [

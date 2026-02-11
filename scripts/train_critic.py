@@ -25,15 +25,15 @@ def build_config() -> train.Config:
     # Path relative to where the script is run (Scaling_Feedback_Descent root)
     dataset = FromConversationFileBuilder(
         common_config=common_config,
-        file_path="creative-writing-bench/data/pairwise_train.jsonl",
+        file_path="creative-writing-bench/data/pairwise_train_freeform_sub.jsonl",
     )
     
     return train.Config(
-        log_path="logs/sft_creative_writing_critic_pairwise_Qwen3-235B-A22B-Instruct-2507",
+        log_path="logs/sft_creative_writing_critic_freeform_sub_Qwen3-235B-A22B-Instruct-2507",
         model_name=model_name,
         dataset_builder=dataset,
         wandb_project="Scaling_Feedback_Descent",
-        wandb_name="sft_creative_writing_critic_pairwise_Qwen3-235B-A22B-Instruct-2507",
+        wandb_name="sft_creative_writing_critic_freeform_sub_Qwen3-235B-A22B-Instruct-2507",
         num_epochs=1,
         save_every=100,
         eval_every=100,
