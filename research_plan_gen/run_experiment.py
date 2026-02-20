@@ -5,6 +5,7 @@ import sys
 import datetime
 import uuid
 import re
+import json
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -16,19 +17,24 @@ from custom_api import APIClient, prompts
 
 # --- Configuration ---
 # Models
-GENERATOR_MODEL = "tinker/Qwen/Qwen3-235B-A22B-Instruct-2507"
-FEEDBACK_MODEL = "openai/gpt-5.2" 
-FINAL_EVAL_MODEL = "anthropic/claude-sonnet-4-5-20250929" 
+GENERATOR_MODEL = os.getenv("GENERATOR_MODEL", "tinker/Qwen/Qwen3-30B-A3B-Instruct-2507")
+GENERATOR_MODEL_PATH = os.getenv("GENERATOR_MODEL_PATH", None)
+
+FEEDBACK_MODEL = os.getenv("FEEDBACK_MODEL", "tinker/Qwen/Qwen3-30B-A3B-Instruct-2507")
+FEEDBACK_MODEL_PATH = os.getenv("FEEDBACK_MODEL_PATH", None)
+
+FINAL_EVAL_MODEL = os.getenv("FINAL_EVAL_MODEL", "anthropic/claude-sonnet-4-5-20250929")
 
 # Settings
-FEEDBACK_ROUNDS = 1
+FEEDBACK_ROUNDS = 2
 DATASET_NAME = "facebook/research-plan-gen"
 CONFIG_NAME = "arxiv"
 SPLIT = "train"
-NUM_SAMPLES = 5
+NUM_SAMPLES = 20
 
 from datasets import load_dataset
 import random
+import json
 
 def parse_solution(text):
     match = re.search(r"<solution>(.*?)</solution>", text, re.DOTALL)
@@ -82,7 +88,11 @@ def main():
     client = APIClient()
 
     print(f"\nGenerative Model: {GENERATOR_MODEL}")
+    if GENERATOR_MODEL_PATH:
+        print(f"Gen Model Path:   {GENERATOR_MODEL_PATH}")
     print(f"Feedback Model:   {FEEDBACK_MODEL}")
+    if FEEDBACK_MODEL_PATH:
+        print(f"FB Model Path:    {FEEDBACK_MODEL_PATH}")
     print(f"Feedback Rounds:  {FEEDBACK_ROUNDS}")
     print(f"Dataset:          {DATASET_NAME} ({CONFIG_NAME})")
 
@@ -103,6 +113,8 @@ def main():
             break
         buffer.append(row)
     
+    # Fixed random seed for reproducible sample selection across runs
+    random.seed(42)
     selected_indices = sorted(random.sample(range(len(buffer)), NUM_SAMPLES))
     samples = [buffer[i] for i in selected_indices]
 
@@ -114,6 +126,8 @@ Here is the research scenario.
 Scenario: {scenario}
 
 {rubric_section}
+
+{history}
 
 Here is Draft Plan A:
 {plan_a}
@@ -136,10 +150,15 @@ Evaluate which of the two Proposed Research Plans is better for the Research Sce
 # Research Scenario
 {scenario}
 
+You have to evaluate each of the rubric items provided below.
 # Rubric
 {rubric_items}
 
-{reference_section}
+# Reference Solution
+Here is a reference solution written by an expert:
+{reference_solution}
+* It is just meant to demonstrate one possible approach that satisfies the scenario. It is not necessary for the proposed research plan you are grading to match all details in the reference solution.
+* The Research Plan you have to grade might have different design choices. This is okay, if the choices are valid, and supported with correct rationale.
 
 # Proposed Research Plan A
 {plan_a}
@@ -227,7 +246,11 @@ Then, return the following nested XML block for each of the grading items (alway
         for i, row in enumerate(samples):
             print(f"\n==================================================")
             print(f"Processing Sample {i+1}/{NUM_SAMPLES} (ID: {row.get('q_id', 'N/A')})")
-            print(f"Models: Gen={GENERATOR_MODEL}, Feedback={FEEDBACK_MODEL}")
+            
+            gen_str = f"Gen={GENERATOR_MODEL}" + (f" (Path: {GENERATOR_MODEL_PATH})" if GENERATOR_MODEL_PATH else "")
+            fb_str = f"Feedback={FEEDBACK_MODEL}" + (f" (Path: {FEEDBACK_MODEL_PATH})" if FEEDBACK_MODEL_PATH else "")
+            print(f"Models: {gen_str}, {fb_str}")
+            
             print(f"==================================================")
             
             scenario = row.get('Goal', '')
@@ -254,9 +277,11 @@ Then, return the following nested XML block for each of the grading items (alway
             # 1. Generate & Refine
             result = client.generate(
                 model=GENERATOR_MODEL,
+                model_path=GENERATOR_MODEL_PATH,
                 prompt=formatted_prompt,
                 feedback_rounds=FEEDBACK_ROUNDS,
                 feedback_model=FEEDBACK_MODEL,
+                feedback_model_path=FEEDBACK_MODEL_PATH,
                 temperature=0.7,
                 max_tokens=1024,
                 run_id=run_id,
@@ -266,10 +291,15 @@ Then, return the following nested XML block for each of the grading items (alway
                 feedback_prompt_template=refinement_feedback_template,
                 # Pass context for refinement templates
                 rubric_items=rubric_items_str,
-                reference_section=reference_solution_str
+                rubric_section=rubric_items_str,
+                reference_section=reference_solution_str,
+                reference_solution=reference_solution_str
             )
             
-            print("\n--- Refined Result (Snippet) ---")
+            if FEEDBACK_ROUNDS > 0:
+                print("\n--- Refined Result (Snippet) ---")
+            else:
+                print("\n--- Generated Result (Snippet) ---")
             print(result[:500] + "..." if len(result) > 500 else result)
 
             # 2. Final Evaluation

@@ -1,4 +1,3 @@
-
 import re
 import time
 import uuid
@@ -8,7 +7,44 @@ import logging
 from typing import Callable, Any, Dict, List, Optional
 from .prompts import prompts
 
-class RefinementPipeline:
+STRUCTURAL_FEEDBACK_TEMPLATE = """You are an expert evaluator. Your task is to evaluate two drafts side-by-side. 
+
+# Task Context
+{scenario}
+
+{rubric_and_reference}
+
+# Draft A
+{plan_a}
+
+# Draft B
+{plan_b}
+
+Please provide your evaluation using exactly the following structured format. Do not omit any sections.
+
+1) Task and evaluation criteria:
+[State the goal, constraints, and a list of evaluation criteria.]
+
+2) Head-to-head comparison by criterion:
+[For each criterion, specify the winner (A, B, or tie), provide 1-2 concrete references as evidence, and note what to borrow from the loser.]
+
+3) Draft-specific notes:
+[For Draft A: Strengths, Weaknesses, Highest-impact fix. For Draft B: Strengths, Weaknesses, Highest-impact fix. Keep these short and actionable.]
+
+4) Synthesis plan (best-of-both):
+[Step-by-step merge instructions, ordered by impact. Include exact edits when possible.]
+
+5) Verification and acceptance tests:
+[Define what "done" means for the next revision.]
+
+6) Output format for next revision:
+[What you want back in the next iteration.]
+
+7) Verdict:
+[You MUST conclude your evaluation with a final verdict in exactly this format: "Verdict: Draft A" or "Verdict: Draft B".]
+"""
+
+class StructuralRefinementPipeline:
     def __init__(self, 
                  generator: Callable, 
                  feedback_model: Callable,
@@ -35,14 +71,14 @@ class RefinementPipeline:
         current_best_response = None
         challenger_wins = 0
         
-        print(f"\n[Refinement] Starting feedback loop for {feedback_rounds} rounds...")
+        print(f"\n[Structural Refinement] Starting feedback loop for {feedback_rounds} rounds...")
         
         try:
             for round_idx in range(1, feedback_rounds + 1):
                 if round_idx == 1:
-                    print(f"[Refinement] Round {round_idx}/{feedback_rounds}: Evaluating two initial drafts...")
+                    print(f"[Structural Refinement] Round {round_idx}/{feedback_rounds}: Evaluating two initial drafts...")
                 else:
-                    print(f"[Refinement] Round {round_idx}/{feedback_rounds}: Generating and evaluating improved draft...")
+                    print(f"[Structural Refinement] Round {round_idx}/{feedback_rounds}: Generating and evaluating improved draft...")
                 # 1. Generation
                 round_context_prompt = current_prompt
                 if history_buffer:
@@ -97,16 +133,15 @@ class RefinementPipeline:
                     challenger = draft_new
                     incumbent = current_best_response
 
-                # 2. Feedback
-                feedback_template = kwargs.get("feedback_prompt_template")
-                if not feedback_template:
-                    feedback_template = self.prompts.get_prompt("refinement_feedback_template")
-
-                else:
-                    pass 
-                    
-                if not feedback_template:
-                     raise ValueError("Missing required prompt: 'refinement_feedback_template'.")
+                # 2. Feedback (Structural)
+                rubric_and_ref = ""
+                if "rubric_items" in kwargs and kwargs["rubric_items"]:
+                    rubric_and_ref += f"\n# Rubric\n{kwargs['rubric_items']}\n"
+                if "reference_section" in kwargs and kwargs["reference_section"]:
+                    if not kwargs["reference_section"].startswith("# Reference Solution"):
+                        rubric_and_ref += f"\n# Reference Solution\n{kwargs['reference_section']}\n"
+                    else:
+                        rubric_and_ref += f"\n{kwargs['reference_section']}\n"
 
                 # Prepare context for formatting
                 format_context = {
@@ -115,18 +150,15 @@ class RefinementPipeline:
                     "incumbent": incumbent,
                     "plan_a": challenger,      # Alias
                     "plan_b": incumbent,       # Alias
-                    "scenario": current_prompt # Alias/Fallback
+                    "scenario": current_prompt,# Alias/Fallback
+                    "rubric_and_reference": rubric_and_ref.strip()
                 }
-                # Merge kwargs into context to allow passing 'rubric_items', 'reference_section' etc.
                 format_context.update(kwargs)
 
                 try:
-                     feedback_prompt = feedback_template.format(**format_context)
-                except KeyError as e:
-                     logging.warning(f"Failed to format 'refinement_feedback_template': Missing key {e}. Falling back to simple concatenation.")
-                     feedback_prompt = f"Here is a writing prompt:\n{current_prompt}\n\nDraft A:\n{challenger}\n\nDraft B:\n{incumbent}\n\nWhich draft is better and why?"
+                     feedback_prompt = STRUCTURAL_FEEDBACK_TEMPLATE.format(**format_context)
                 except Exception as e:
-                     logging.warning(f"Failed to format 'refinement_feedback_template': {e}. Falling back to simple concatenation.")
+                     logging.warning(f"Failed to format structural feedback template: {e}. Falling back to simple concatenation.")
                      feedback_prompt = f"Here is a writing prompt:\n{current_prompt}\n\nDraft A:\n{challenger}\n\nDraft B:\n{incumbent}\n\nWhich draft is better and why?"
 
                 feedback_messages = [{"role": "user", "content": feedback_prompt}]
@@ -161,15 +193,15 @@ class RefinementPipeline:
                     current_best_response = challenger
                     if round_idx > 1:
                         challenger_wins += 1
-                        print(f"[Refinement]   -> Improved draft (Challenger) beat the old draft (Incumbent).")
+                        print(f"[Structural Refinement]   -> Improved draft (Challenger) beat the old draft (Incumbent).")
                     else:
-                        print(f"[Refinement]   -> Draft A selected as initial best.")
+                        print(f"[Structural Refinement]   -> Draft A selected as initial best.")
                 else:
                     current_best_response = incumbent
                     if round_idx > 1:
-                        print(f"[Refinement]   -> Old draft retained (improved draft did not win).")
+                        print(f"[Structural Refinement]   -> Old draft retained (improved draft did not win).")
                     else:
-                        print(f"[Refinement]   -> Draft B selected as initial best.")
+                        print(f"[Structural Refinement]   -> Draft B selected as initial best.")
 
                 # 4. History Update
                 if round_idx == 1:
@@ -204,9 +236,9 @@ class RefinementPipeline:
             
             if feedback_rounds > 1:
                 improvement_rounds = feedback_rounds - 1
-                print(f"[Refinement] Loop completed. Improved draft win rate: {challenger_wins}/{improvement_rounds} ({challenger_wins/improvement_rounds:.0%})")
+                print(f"[Structural Refinement] Loop completed. Improved draft win rate: {challenger_wins}/{improvement_rounds} ({challenger_wins/improvement_rounds:.0%})")
             else:
-                print(f"[Refinement] Loop completed.")
+                print(f"[Structural Refinement] Loop completed.")
             
             return current_best_response
         except Exception as e:
@@ -215,7 +247,7 @@ class RefinementPipeline:
 
     def _save_history(self, kwargs, prompt, structured_history, final_response):
         try:
-            history_dir = "refinement_history"
+            history_dir = "structural_refinement_history"
             run_id = kwargs.get('run_id')
             if run_id:
                  run_id = re.sub(r'[^a-zA-Z0-9_-]', '_', str(run_id))
@@ -243,4 +275,4 @@ class RefinementPipeline:
             with open(filename, "w", encoding="utf-8") as f:
                 json.dump(save_data, f, indent=2)
         except Exception as e:
-            logging.error(f"Failed to save refinement history: {e}")
+            logging.error(f"Failed to save structural refinement history: {e}")

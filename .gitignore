@@ -25,8 +25,8 @@ outputs/
 # Ignore Refinement History
 /refinement_history
 
-# Ignore DPO Data
 /research_plan_gen/dpo_data
+/research_plan_gen/runs
 
 CLAUDE.md
 .claude

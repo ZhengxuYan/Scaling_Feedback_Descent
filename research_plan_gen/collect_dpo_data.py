@@ -90,10 +90,15 @@ Evaluate which of the two Proposed Research Plans is better for the Research Sce
 # Research Scenario
 {scenario}
 
+You have to evaluate each of the rubric items provided below.
 # Rubric
 {rubric_items}
 
-{reference_section}
+# Reference Solution
+Here is a reference solution written by an expert:
+{reference_solution}
+* It is just meant to demonstrate one possible approach that satisfies the scenario. It is not necessary for the proposed research plan you are grading to match all details in the reference solution.
+* The Research Plan you have to grade might have different design choices. This is okay, if the choices are valid, and supported with correct rationale.
 
 # Proposed Research Plan A
 {plan_a}
@@ -182,42 +187,55 @@ class DPOCollector:
             prompt=prompt,
             temperature=0.7,
             max_tokens=1024,
-            parsing_function=parse_solution
+            parsing_function=parse_solution,
+            timeout=1200
         )
 
-    def generate_feedback(self, prompt, challenger, incumbent, context):
+    def generate_feedback(self, prompt, plan_a, plan_b, context):
         # Generate feedback (Critique)
         # Using high temperature to get diverse feedbacks
         
         # Prepare feedback prompt
         feedback_prompt = refinement_feedback_template.format(
             scenario=prompt,
-            plan_a=challenger,
-            plan_b=incumbent,
+            plan_a=plan_a,
+            plan_b=plan_b,
             **context
         )
         
-        # messages = [{"role": "user", "content": feedback_prompt}]
-        
         return self.client.generate(
             model=FEEDBACK_MODEL,
-            prompt=feedback_prompt, # APIClient handles messages if this is string
+            prompt=feedback_prompt,
             temperature=1.0, # High temp for diversity
-            max_tokens=1024
+            max_tokens=1024,
+            timeout=1200
         ), feedback_prompt
 
-    def generate_revision(self, prompt, challenger, incumbent, feedback, context, history=""):
+    def generate_revision(self, prompt, plan_a, plan_b, feedback, context, history=""):
         # Parse verdict from feedback
         cleaned_feedback = feedback.strip().lower()
         winning_label = "Draft B"
-        if "draft a" in cleaned_feedback or "response a" in cleaned_feedback:
-            winning_label = "Draft A"
+        verdict_match = re.search(r"verdict\*?\*?:\s*(.*)", cleaned_feedback, re.IGNORECASE)
+        if verdict_match:
+            verdict_text = verdict_match.group(1).strip().lower()
+            if "draft a" in verdict_text or "response a" in verdict_text or "plan a" in verdict_text:
+                winning_label = "Draft A"
+            elif "draft b" in verdict_text or "response b" in verdict_text or "plan b" in verdict_text:
+                winning_label = "Draft B"
+            else:
+                if "draft a" in cleaned_feedback or "plan a" in cleaned_feedback:
+                    if "draft b" not in cleaned_feedback and "plan b" not in cleaned_feedback:
+                        winning_label = "Draft A"
+        else:
+            if "draft a" in cleaned_feedback or "plan a" in cleaned_feedback:
+                if "draft b" not in cleaned_feedback and "plan b" not in cleaned_feedback:
+                    winning_label = "Draft A"
         
         # Prepare revision prompt
         revision_prompt = refinement_gen_template.format(
             scenario=prompt,
-            plan_a=challenger,
-            plan_b=incumbent,
+            plan_a=plan_a,
+            plan_b=plan_b,
             verdict=winning_label,
             rationale=feedback,
             history=history,
@@ -228,7 +246,8 @@ class DPOCollector:
             model=GENERATOR_MODEL,
             prompt=revision_prompt,
             temperature=0.7,
-            max_tokens=1024,
+            max_tokens=4096,
+            timeout=1200,
             parsing_function=parse_solution
         )
         return revision
@@ -327,12 +346,19 @@ def main():
                 for round_idx in range(args.feedback_rounds):
                     print(f"--- Round {round_idx+1} ---")
                     
+                    # Randomly assign challenger and incumbent to A or B
+                    is_swapped = random.choice([True, False])
+                    if is_swapped:
+                        plan_a, plan_b = current_incumbent, current_challenger
+                    else:
+                        plan_a, plan_b = current_challenger, current_incumbent
+
                     # 1. Generate Two Feedbacks
                     print("Generating Feedback 1...")
-                    feedback_1, feedback_prompt = collector.generate_feedback(scenario, current_challenger, current_incumbent, context)
+                    feedback_1, feedback_prompt = collector.generate_feedback(scenario, plan_a, plan_b, context)
                     
                     print("Generating Feedback 2...")
-                    feedback_2, _ = collector.generate_feedback(scenario, current_challenger, current_incumbent, context)
+                    feedback_2, _ = collector.generate_feedback(scenario, plan_a, plan_b, context)
                     
                     # 2. Generate Revisions based on Feedbacks
                     history_text = "\n\n".join(history_buffer) if history_buffer else ""
@@ -340,10 +366,10 @@ def main():
                         history_text = f"Previous Rounds History:\n{history_text}"
 
                     print("Generating Revision 1...")
-                    revision_1 = collector.generate_revision(scenario, current_challenger, current_incumbent, feedback_1, context, history=history_text)
+                    revision_1 = collector.generate_revision(scenario, plan_a, plan_b, feedback_1, context, history=history_text)
                     
                     print("Generating Revision 2...")
-                    revision_2 = collector.generate_revision(scenario, current_challenger, current_incumbent, feedback_2, context, history=history_text)
+                    revision_2 = collector.generate_revision(scenario, plan_a, plan_b, feedback_2, context, history=history_text)
                     
                     # 3. Evaluate Revisions
                     print("Evaluating Revision 1...")
@@ -403,8 +429,8 @@ def main():
                         # Update history
                         history_entry = (
                             f"--- Round {round_idx + 1} ---\n"
-                            f"Draft A:\n{current_challenger}\n\n"
-                            f"Draft B:\n{current_incumbent}\n\n"
+                            f"Draft A:\n{plan_a}\n\n"
+                            f"Draft B:\n{plan_b}\n\n"
                             f"Feedback:\n{winner_feedback}\n"
                             f"Selected Revision Score: {max(score_1, score_2):.2f}\n"
                         )

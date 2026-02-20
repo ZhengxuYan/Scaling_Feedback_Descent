@@ -88,6 +88,10 @@ class APIClient:
              logging.info(f"Substituting model alias: {model} -> {MODEL_NAME_SUBS[model]}")
              model = MODEL_NAME_SUBS[model]
 
+        # Extract model paths for routing
+        generator_model_path = kwargs.pop("model_path", None)
+        feedback_model_path = kwargs.pop("feedback_model_path", None)
+
         # Determine actual provider
         provider = self._get_provider(model)
         
@@ -103,8 +107,9 @@ class APIClient:
                 user_text = messages[-1]["content"] if messages else ""
                 sys_text = messages[0]["content"] if messages and messages[0]["role"] == "system" else system
                 # Call provider directly to avoid recursion or re-routing logic
-                # IMPORTANT: We must NOT pass feedback_rounds to provider.generate here, or it will loop forever!
                 kwargs_safe = {k: v for k, v in kwargs.items() if k != "feedback_rounds"}
+                if generator_model_path:
+                    kwargs_safe["model_path"] = generator_model_path
                 return provider.generate(model, user_text, temp, max_tok, sys_text, **kwargs_safe)
 
             # Feedback Function Wrapper
@@ -113,13 +118,15 @@ class APIClient:
             feedback_prov = self._get_provider(feedback_model)
             def feedback_func(messages, temp, max_tok):
                 user_text = messages[-1]["content"] if messages else ""
-                # Filter feedback_rounds for this call as well
+                kwargs_safe = {k: v for k, v in kwargs.items() if k != "feedback_rounds"}
+                if feedback_model_path:
+                    kwargs_safe["model_path"] = feedback_model_path
                 return feedback_prov.generate(
                     feedback_model, 
                     user_text, 
                     temp, 
                     max_tok, 
-                    **{k: v for k, v in kwargs.items() if k != "feedback_rounds"}
+                    **kwargs_safe
                 )
 
             # Run Pipeline
@@ -137,6 +144,9 @@ class APIClient:
             )
 
         # Standard Generation
+        kw = {**kwargs}
+        if generator_model_path:
+            kw["model_path"] = generator_model_path
         return provider.generate(
             model, 
             prompt, 
@@ -144,5 +154,5 @@ class APIClient:
             max_tokens=max_tokens, 
             system=system, 
             min_p=min_p, 
-            **kwargs
+            **kw
         )

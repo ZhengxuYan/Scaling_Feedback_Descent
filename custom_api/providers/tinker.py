@@ -38,9 +38,7 @@ class TinkerProvider(ModelProvider):
 
         try:
             service_client = tinker.ServiceClient(api_key=self.api_key)
-            
-            # Use passed model name, fallback to env if somehow empty
-            target_model = model_name or os.getenv("TINKER_BASE_MODEL", "Qwen/Qwen3-235B-A22B-Instruct-2507")
+            target_model = model_name
             
             log_msg = f"Initializing Tinker provider with model: {target_model}"
             if model_path:
@@ -69,7 +67,7 @@ class TinkerProvider(ModelProvider):
             logging.error(f"Failed to initialize Tinker provider with {model_name} (path={model_path}): {e}")
             raise e
 
-    def _tinker_sample_sync(self, client, renderer, messages, temperature, max_tokens):
+    def _tinker_sample_sync(self, client, renderer, messages, temperature, max_tokens, timeout=1200):
         model_input = renderer.build_generation_prompt(
             [renderers.Message(role=m["role"], content=m["content"]) for m in messages]
         )
@@ -85,7 +83,7 @@ class TinkerProvider(ModelProvider):
         )
         if hasattr(future, "result"):
             try:
-                response = future.result(timeout=300)
+                response = future.result(timeout=timeout)
             except Exception as e:
                 raise e
         else:
@@ -116,4 +114,8 @@ class TinkerProvider(ModelProvider):
         messages = [{"role": "user", "content": prompt}]
         
         # Simple generation
-        return self._tinker_sample_sync(client, renderer, messages, temperature, max_tokens)
+        
+        # Check for timeout in kwargs
+        timeout = kwargs.get('timeout', 1200)
+        
+        return self._tinker_sample_sync(client, renderer, messages, temperature, max_tokens, timeout=timeout)
