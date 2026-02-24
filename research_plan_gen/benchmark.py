@@ -15,7 +15,7 @@ load_dotenv()
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from custom_api import APIClient
-from custom_api import prompts as prompts_module # Avoiding conflict if prompts is used as variable
+from custom_api import prompts as prompts_module
 
 # --- Configuration ---
 # List of models to benchmark
@@ -28,11 +28,10 @@ MODELS_TO_TEST = [
 
 FINAL_EVAL_MODEL = "anthropic/claude-sonnet-4-5-20250929"
 DATASET_NAME = "facebook/research-plan-gen"
-CONFIG_NAME = "arxiv"
+CONFIGS = ["arxiv", "ml", "pubmed"]
 SPLIT = "train"
-NUM_SAMPLES = 5  # Number of samples to test per model
 
-# --- Helper Functions (Copied/Adapted from run_experiment.py) ---
+# --- Helper Functions ---
 
 def parse_solution(text):
     match = re.search(r"<solution>(.*?)</solution>", text, re.DOTALL)
@@ -89,27 +88,10 @@ def main():
     run_id = f"benchmark_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
     print(f"Run ID: {run_id}")
 
-    # Load Dataset
-    print(f"Loading dataset {DATASET_NAME}...")
-    ds = load_dataset(DATASET_NAME, CONFIG_NAME, split=SPLIT, streaming=True)
+    # Seed for random model selection
+    random.seed(42)
     
-    # Select fixed samples for consistency
-    # We buffer a bit and select the same indices for all models in this run
-    print(f"Selecting {NUM_SAMPLES} samples...")
-    buffer = []
-    MAX_BUFFER = 100
-    for i, row in enumerate(ds):
-        if i >= MAX_BUFFER:
-            break
-        buffer.append(row)
-    
-    # Use a fixed seed for selection to ensure reproducibility across runs if needed, 
-    # but here we just want the same samples for all models in *this* run.
-    random.seed(42) 
-    selected_indices = sorted(random.sample(range(len(buffer)), NUM_SAMPLES))
-    samples = [buffer[i] for i in selected_indices]
-    
-    # Prepare Evaluation Template (from run_experiment.py)
+    # Prepare Evaluation Template
     eval_prompt_template = """Evaluate if the Proposed Research Plan satisfies the Research Scenario based on the provided evaluation criteria.
 
 # Research Scenario
@@ -171,14 +153,15 @@ Then, return the following nested XML block for each of the grading items (alway
     
     print(f"Models to test: {MODELS_TO_TEST}")
 
-    # To store incrementally, we'll maintain the file path
     output_file = f"benchmark_results_{run_id}.json"
 
-    for model_name in MODELS_TO_TEST:
-        print(f"\n>>> Benchmarking Model: {model_name} <<<")
+    for config_name in CONFIGS:
+        print(f"\n>>> Loading dataset {DATASET_NAME} - split: {config_name} <<<")
+        ds = load_dataset(DATASET_NAME, config_name, split=SPLIT, streaming=True)
         
-        for i, row in enumerate(samples):
-            print(f"\n   Processing Sample {i+1}/{NUM_SAMPLES} (ID: {row.get('q_id', 'N/A')})")
+        for i, row in enumerate(ds):
+            model_name = random.choice(MODELS_TO_TEST)
+            print(f"\n   Processing Sample {i+1} in {config_name} | Model: {model_name} | ID: {row.get('q_id', 'N/A')}")
             
             scenario = row.get('Goal', '')
             rubric_list = row.get('Rubric', [])
@@ -259,6 +242,7 @@ Then, return the following nested XML block for each of the grading items (alway
                 "run_id": run_id,
                 "timestamp": datetime.datetime.now().isoformat(),
                 "model_name": model_name,
+                "config_name": config_name,
                 "sample_id": row.get('q_id'),
                 "scenario": scenario,
                 "generated_plan_raw": result_raw,
