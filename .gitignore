@@ -4,8 +4,7 @@
 # Ignore data files
 /data
 
-# Ignore tinker-cookbook
-tinker-cookbook/
+# Ignore tinker-cookbook (REMOVED: User wants to track it in this repo)
 
 # Ignore logs
 logs/
